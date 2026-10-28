@@ -1,0 +1,60 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+[hidden] { display: none !important; }
+
+body {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+h1 { margin: 0; font-size: 1.5rem; }
+
+#account { display: flex; align-items: center; gap: 0.5rem; }
+#user-email { opacity: 0.7; font-size: 0.9rem; }
+
+button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 60vh;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+#status { font-size: 0.85rem; opacity: 0.7; min-height: 1.2em; }
+#status.error { color: #d33; opacity: 1; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
