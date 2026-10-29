@@ -297,14 +297,12 @@ $("fact-image").addEventListener("change", async (e) => {
   if (!file) return;
   pendingFactImage = await compressImage(file);
   $("fact-image-preview").src = pendingFactImage;
-  $("fact-image-preview").hidden = false;
-  $("fact-image-clear").hidden = false;
+  $("fact-image-row").hidden = false;
 });
 function clearFactImage() {
   pendingFactImage = null;
   $("fact-image").value = "";
-  $("fact-image-preview").hidden = true;
-  $("fact-image-clear").hidden = true;
+  $("fact-image-row").hidden = true;
 }
 $("fact-image-clear").addEventListener("click", clearFactImage);
 
@@ -395,6 +393,13 @@ async function runFactSearch() {
   }
 }
 $("fact-search").addEventListener("input", runFactSearch);
+// The search box shares the fact form; Enter should just close the keyboard, not add a fact.
+$("fact-search").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    e.target.blur();
+  }
+});
 
 // ---------- edit dialog ----------
 
@@ -526,6 +531,23 @@ $("signout").addEventListener("click", async () => {
 
 // Save the scratch pad straight away if the app is hidden/closed with unsaved edits.
 document.addEventListener("visibilitychange", () => { if (document.hidden && scratchTimer) saveScratch(); });
+
+// On-screen keyboard detection: with interactive-widget=resizes-content the window
+// shrinks when the keyboard opens. While it's open, style.css hides the tab bar so the
+// list keeps more room above the input dock.
+let fullHeight = window.innerHeight;
+let fullWidth = window.innerWidth;
+function updateKeyboard() {
+  if (window.innerWidth !== fullWidth) { // rotation: start measuring afresh
+    fullWidth = window.innerWidth;
+    fullHeight = window.innerHeight;
+  }
+  fullHeight = Math.max(fullHeight, window.innerHeight);
+  const typing = document.activeElement?.matches("input, textarea");
+  document.body.classList.toggle("keyboard", Boolean(typing) && window.innerHeight < fullHeight * 0.8);
+}
+window.addEventListener("resize", updateKeyboard);
+document.addEventListener("focusout", () => setTimeout(updateKeyboard, 0));
 
 route();
 // Opened from a home-screen shortcut (e.g. ./#urgent): jump straight into the capture box.

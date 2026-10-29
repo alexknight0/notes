@@ -6,30 +6,65 @@
   --muted: color-mix(in srgb, currentColor 60%, transparent);
   --line: color-mix(in srgb, currentColor 18%, transparent);
   --card: color-mix(in srgb, currentColor 5%, transparent);
-  --tabs-h: 3.6rem;
+  --pad: 1rem;
 }
 
 [hidden] { display: none !important; }
 
+/* Full-height column: header, the current view (scroll area + input dock), tab bar.
+   100dvh follows the on-screen keyboard (see interactive-widget in index.html). */
+html, body { height: 100%; }
 body {
+  box-sizing: border-box;
+  height: 100dvh;
   max-width: 48rem;
   margin: 0 auto;
-  padding: 1rem 1rem calc(var(--tabs-h) + 1.5rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-header {
+header { padding: var(--pad) var(--pad) 0; }
+.title-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   flex-wrap: wrap;
 }
+#signed-out-msg { padding: 0 var(--pad); }
 
 h1 { margin: 0; font-size: 1.5rem; }
 h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
 
 #account { display: flex; align-items: center; gap: 0.5rem; }
 #user-email { color: var(--muted); font-size: 0.85rem; }
+
+#app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--pad) var(--pad); }
+
+/* Input dock: bottom of the screen on phones (thumb reach). */
+.dock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem var(--pad);
+  border-top: 1px solid var(--line);
+}
+.dock .row { flex-wrap: nowrap; }
+.dock .row > input:not([type]), .dock .row > textarea { flex: 1; min-width: 0; }
+.dock textarea {
+  field-sizing: content; /* grows with the text (Chrome 123+) */
+  min-height: 2.6rem;
+  max-height: 8rem;
+  resize: none;
+}
+
+/* Wide screens with a mouse: input at the top, like a normal page. */
+@media (min-width: 700px) and (pointer: fine) {
+  .dock { order: -1; border-top: none; padding-top: var(--pad); }
+}
 
 button, .file-btn {
   font: inherit;
@@ -44,6 +79,7 @@ button, .file-btn {
 button[type="submit"], #edit-save { background: var(--accent); border-color: var(--accent); color: white; }
 button.small { padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 button.danger { color: var(--danger); }
+.icon-btn { padding: 0.45rem 0.6rem; }
 
 input, textarea, select {
   box-sizing: border-box;
@@ -57,17 +93,22 @@ input, textarea, select {
 }
 textarea { width: 100%; line-height: 1.5; resize: vertical; }
 
-#scratch { min-height: 65vh; margin-top: 1rem; }
+/* Scratch pad fills the whole view, down to the tab bar. */
+#scratch {
+  flex: 1;
+  width: auto;
+  margin: 0.6rem var(--pad) var(--pad);
+  resize: none;
+}
 
-.capture { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
-.capture > input { width: 100%; }
 .row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.row > button[type="submit"] { margin-left: auto; }
 .spacer { flex: 1; }
-.due-label { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); }
+.due-label { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.9rem; }
+.due-label input { padding: 0.3rem 0.5rem; font-size: 0.9rem; }
 
-#fact-search { width: 100%; margin-top: 1.2rem; }
-.hint { font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; min-height: 1em; }
+#fact-search { width: 100%; }
+.hint { font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; }
+.hint:empty { display: none; }
 
 .list { list-style: none; padding: 0; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .list li {
@@ -100,14 +141,15 @@ details summary { cursor: pointer; color: var(--muted); margin-top: 1rem; }
 .empty { color: var(--muted); }
 
 #tabs {
-  position: fixed;
-  left: 0; right: 0; bottom: 0;
+  flex: none;
   display: flex;
-  height: var(--tabs-h);
+  height: 3.6rem;
   padding-bottom: env(safe-area-inset-bottom);
   background: Canvas;
   border-top: 1px solid var(--line);
 }
+/* While the keyboard is open (set by app.js), give its space to the list instead of the tabs. */
+body.keyboard #tabs { display: none; }
 #tabs a {
   position: relative;
   flex: 1;

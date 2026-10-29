@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- interactive-widget=resizes-content: the on-screen keyboard shrinks the layout,
+       so the bottom input bar sits above the keyboard instead of behind it. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Notes</title>
   <meta name="theme-color" content="#1f6feb">
   <link rel="manifest" href="manifest.webmanifest">
@@ -11,17 +13,21 @@
 </head>
 <body>
   <header>
-    <h1 id="view-title">Notes</h1>
-    <div id="account">
-      <span id="user-email"></span>
-      <button id="signin" type="button" hidden>Sign in with Google</button>
-      <button id="signout" type="button" class="small" hidden>Sign out</button>
+    <div class="title-row">
+      <h1 id="view-title">Notes</h1>
+      <div id="account">
+        <span id="user-email"></span>
+        <button id="signin" type="button" hidden>Sign in with Google</button>
+        <button id="signout" type="button" class="small" hidden>Sign out</button>
+      </div>
     </div>
+    <p id="status" role="status" aria-live="polite"></p>
   </header>
 
   <p id="signed-out-msg" class="empty" hidden>Sign in to see your notes.</p>
-  <p id="status" role="status" aria-live="polite"></p>
 
+  <!-- Each view = a scrolling area + an input dock. On phones the dock sits at the
+       bottom (thumb reach); on wide screens with a mouse it moves to the top (style.css). -->
   <main id="app" hidden>
     <!-- 3. Scratch pad -->
     <section id="view-scratch" class="view" data-title="Scratch pad">
@@ -31,53 +37,65 @@
 
     <!-- 1. Urgent / deadlines -->
     <section id="view-urgent" class="view" data-title="Urgent" hidden>
-      <form class="capture" id="urgent-form" autocomplete="off">
-        <input id="urgent-text" placeholder="e.g. dentist fri 3pm" aria-label="Urgent note" enterkeyhint="done">
+      <div class="scroll">
+        <ul id="urgent-list" class="list"></ul>
+        <details id="urgent-done-wrap" hidden>
+          <summary>Done (<span id="urgent-done-count">0</span>)</summary>
+          <ul id="urgent-done" class="list"></ul>
+        </details>
+      </div>
+      <form class="dock" id="urgent-form" autocomplete="off">
         <div class="row">
           <label class="due-label">Due <input id="urgent-due" type="datetime-local"></label>
+        </div>
+        <div class="row">
+          <input id="urgent-text" placeholder="e.g. dentist fri 3pm" aria-label="Urgent note" enterkeyhint="done">
           <button type="submit">Add</button>
         </div>
       </form>
-      <ul id="urgent-list" class="list"></ul>
-      <details id="urgent-done-wrap" hidden>
-        <summary>Done (<span id="urgent-done-count">0</span>)</summary>
-        <ul id="urgent-done" class="list"></ul>
-      </details>
     </section>
 
     <!-- 2.1. Long-term facts -->
     <section id="view-facts" class="view" data-title="Facts" hidden>
-      <form class="capture" id="fact-form" autocomplete="off">
-        <textarea id="fact-text" rows="2" placeholder="e.g. My height: 178 cm" aria-label="Fact"></textarea>
+      <div class="scroll">
+        <p id="search-status" class="hint"></p>
+        <ul id="fact-list" class="list"></ul>
+      </div>
+      <form class="dock" id="fact-form" autocomplete="off">
+        <input id="fact-search" type="search" placeholder="🔍 Search facts…" aria-label="Search facts" enterkeyhint="search">
+        <div class="row" id="fact-image-row" hidden>
+          <img id="fact-image-preview" class="thumb" alt="">
+          <button id="fact-image-clear" type="button" class="small">Remove photo</button>
+        </div>
         <div class="row">
-          <label class="file-btn">📷 Photo<input id="fact-image" type="file" accept="image/*" hidden></label>
-          <img id="fact-image-preview" class="thumb" alt="" hidden>
-          <button id="fact-image-clear" type="button" class="small" hidden>Remove photo</button>
+          <label class="file-btn icon-btn" title="Add photo" aria-label="Add photo">📷<input id="fact-image" type="file" accept="image/*" hidden></label>
+          <textarea id="fact-text" rows="1" placeholder="New fact, e.g. My height: 178 cm" aria-label="Fact"></textarea>
           <button type="submit">Add</button>
         </div>
       </form>
-      <input id="fact-search" type="search" placeholder="Search facts…" aria-label="Search facts">
-      <p id="search-status" class="hint"></p>
-      <ul id="fact-list" class="list"></ul>
     </section>
 
     <!-- 2.2. Thoughts to revisit -->
     <section id="view-thoughts" class="view" data-title="Thoughts" hidden>
-      <form class="capture" id="thought-form" autocomplete="off">
-        <textarea id="thought-text" rows="2" placeholder="Something to think about later…" aria-label="Thought"></textarea>
-        <div class="row"><button type="submit">Add</button></div>
-      </form>
-      <div class="list-head">
-        <h2>To review</h2>
-        <button id="thoughts-reviewed" type="button" class="small">Mark all reviewed</button>
+      <div class="scroll">
+        <div class="list-head">
+          <h2>To review</h2>
+          <button id="thoughts-reviewed" type="button" class="small">Mark all reviewed</button>
+        </div>
+        <ul id="thought-new" class="list"></ul>
+        <h2>Earlier</h2>
+        <ul id="thought-old" class="list"></ul>
+        <details id="thought-archived-wrap" hidden>
+          <summary>Archived (<span id="thought-archived-count">0</span>)</summary>
+          <ul id="thought-archived" class="list"></ul>
+        </details>
       </div>
-      <ul id="thought-new" class="list"></ul>
-      <h2>Earlier</h2>
-      <ul id="thought-old" class="list"></ul>
-      <details id="thought-archived-wrap" hidden>
-        <summary>Archived (<span id="thought-archived-count">0</span>)</summary>
-        <ul id="thought-archived" class="list"></ul>
-      </details>
+      <form class="dock" id="thought-form" autocomplete="off">
+        <div class="row">
+          <textarea id="thought-text" rows="1" placeholder="Something to think about later…" aria-label="Thought"></textarea>
+          <button type="submit">Add</button>
+        </div>
+      </form>
     </section>
   </main>
 
