@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Notes</title>
   <meta name="theme-color" content="#1f6feb">
   <link rel="manifest" href="manifest.webmanifest">
@@ -11,20 +11,109 @@
 </head>
 <body>
   <header>
-    <h1>Notes</h1>
+    <h1 id="view-title">Notes</h1>
     <div id="account">
       <span id="user-email"></span>
       <button id="signin" type="button" hidden>Sign in with Google</button>
-      <button id="signout" type="button" hidden>Sign out</button>
+      <button id="signout" type="button" class="small" hidden>Sign out</button>
     </div>
   </header>
 
-  <main>
-    <p id="signed-out-msg" hidden>Sign in to see and edit your note.</p>
-    <label for="note" class="visually-hidden">Note</label>
-    <textarea id="note" placeholder="Write something…" hidden></textarea>
-    <p id="status" role="status" aria-live="polite"></p>
+  <p id="signed-out-msg" class="empty" hidden>Sign in to see your notes.</p>
+  <p id="status" role="status" aria-live="polite"></p>
+
+  <main id="app" hidden>
+    <!-- 3. Scratch pad -->
+    <section id="view-scratch" class="view" data-title="Scratch pad">
+      <label for="scratch" class="visually-hidden">Scratch pad</label>
+      <textarea id="scratch" placeholder="Type anything…"></textarea>
+    </section>
+
+    <!-- 1. Urgent / deadlines -->
+    <section id="view-urgent" class="view" data-title="Urgent" hidden>
+      <form class="capture" id="urgent-form" autocomplete="off">
+        <input id="urgent-text" placeholder="e.g. dentist fri 3pm" aria-label="Urgent note" enterkeyhint="done">
+        <div class="row">
+          <label class="due-label">Due <input id="urgent-due" type="datetime-local"></label>
+          <button type="submit">Add</button>
+        </div>
+      </form>
+      <ul id="urgent-list" class="list"></ul>
+      <details id="urgent-done-wrap" hidden>
+        <summary>Done (<span id="urgent-done-count">0</span>)</summary>
+        <ul id="urgent-done" class="list"></ul>
+      </details>
+    </section>
+
+    <!-- 2.1. Long-term facts -->
+    <section id="view-facts" class="view" data-title="Facts" hidden>
+      <form class="capture" id="fact-form" autocomplete="off">
+        <textarea id="fact-text" rows="2" placeholder="e.g. My height: 178 cm" aria-label="Fact"></textarea>
+        <div class="row">
+          <label class="file-btn">📷 Photo<input id="fact-image" type="file" accept="image/*" hidden></label>
+          <img id="fact-image-preview" class="thumb" alt="" hidden>
+          <button id="fact-image-clear" type="button" class="small" hidden>Remove photo</button>
+          <button type="submit">Add</button>
+        </div>
+      </form>
+      <input id="fact-search" type="search" placeholder="Search facts…" aria-label="Search facts">
+      <p id="search-status" class="hint"></p>
+      <ul id="fact-list" class="list"></ul>
+    </section>
+
+    <!-- 2.2. Thoughts to revisit -->
+    <section id="view-thoughts" class="view" data-title="Thoughts" hidden>
+      <form class="capture" id="thought-form" autocomplete="off">
+        <textarea id="thought-text" rows="2" placeholder="Something to think about later…" aria-label="Thought"></textarea>
+        <div class="row"><button type="submit">Add</button></div>
+      </form>
+      <div class="list-head">
+        <h2>To review</h2>
+        <button id="thoughts-reviewed" type="button" class="small">Mark all reviewed</button>
+      </div>
+      <ul id="thought-new" class="list"></ul>
+      <h2>Earlier</h2>
+      <ul id="thought-old" class="list"></ul>
+      <details id="thought-archived-wrap" hidden>
+        <summary>Archived (<span id="thought-archived-count">0</span>)</summary>
+        <ul id="thought-archived" class="list"></ul>
+      </details>
+    </section>
   </main>
+
+  <nav id="tabs" hidden>
+    <a href="#scratch" data-view="scratch"><span>✏️</span>Scratch</a>
+    <a href="#urgent" data-view="urgent"><span>⏰</span>Urgent<b id="urgent-badge" hidden></b></a>
+    <a href="#facts" data-view="facts"><span>📌</span>Facts</a>
+    <a href="#thoughts" data-view="thoughts"><span>💭</span>Thoughts<b id="thought-badge" hidden></b></a>
+  </nav>
+
+  <dialog id="edit">
+    <form method="dialog" id="edit-form">
+      <label>Type
+        <select id="edit-type">
+          <option value="urgent">Urgent</option>
+          <option value="fact">Fact</option>
+          <option value="thought">Thought</option>
+        </select>
+      </label>
+      <textarea id="edit-text" rows="5" aria-label="Text"></textarea>
+      <label id="edit-due-wrap">Due <input id="edit-due" type="datetime-local"></label>
+      <div id="edit-image-wrap">
+        <img id="edit-image" alt="">
+        <div class="row">
+          <label class="file-btn">📷 Replace photo<input id="edit-image-file" type="file" accept="image/*" hidden></label>
+          <button id="edit-image-remove" type="button" class="small">Remove photo</button>
+        </div>
+      </div>
+      <div class="row">
+        <button id="edit-delete" type="button" class="danger">Delete</button>
+        <span class="spacer"></span>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button id="edit-save" value="save">Save</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="app.js"></script>
 </body>
