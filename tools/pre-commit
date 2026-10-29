@@ -1,0 +1,11 @@
+#!/bin/sh
+# Stamps version.js with the commit time so the app can tell when it's running a stale copy.
+# Install once per clone:  ln -sf ../../tools/pre-commit .git/hooks/pre-commit
+cd "$(git rev-parse --show-toplevel)" || exit 1
+v=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+cat > version.js <<EOF
+// Set automatically by tools/pre-commit on every commit. app.js compares this (the copy
+// that's running) with the live file on GitHub Pages to show whether an update is available.
+export const VERSION = "$v";
+EOF
+git add version.js

@@ -28,17 +28,40 @@ header { padding: var(--pad) var(--pad) 0; }
 .title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 0.5rem;
 }
+h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) { #user-email { display: none; } }
 #signed-out-msg { padding: 0 var(--pad); }
 
 h1 { margin: 0; font-size: 1.5rem; }
 h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
 
-#account { display: flex; align-items: center; gap: 0.5rem; }
+#account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
 #user-email { color: var(--muted); font-size: 0.85rem; }
+
+/* Version indicator next to the title: green dot = latest, orange "Update" = stale copy,
+   hollow grey = couldn't check (offline) or still checking. */
+.version {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  border: none;
+  font-size: 0.8rem;
+}
+.version i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 2px solid var(--muted);
+}
+.version[data-state="ok"] i { background: #2da44e; border-color: #2da44e; }
+.version[data-state="stale"] { border: 1px solid #d97706; color: #d97706; font-weight: 600; padding: 0.2rem 0.6rem; }
+.version[data-state="stale"] i { background: #d97706; border-color: #d97706; }
+.version[data-state="updating"] i { border-color: #d97706; border-top-color: transparent; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 #app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
