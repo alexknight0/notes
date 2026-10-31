@@ -653,9 +653,13 @@ async function checkVersion() {
 
 versionBtn.addEventListener("click", async () => {
   const state = versionBtn.dataset.state;
+  if (state === "checking" || state === "updating") return;
   if (state !== "stale") {
+    // Green or grey: check again now and report the result.
+    setVersionState("checking");
     setStatus(versionBtn.title);
-    if (state === "unknown") checkVersion();
+    await checkVersion();
+    setStatus(versionBtn.title);
     return;
   }
   setVersionState("updating");
