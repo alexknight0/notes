@@ -46,8 +46,12 @@
         </details>
       </div>
       <form class="dock" id="urgent-form" autocomplete="off">
-        <div class="row">
-          <label class="due-label">Due <input id="urgent-due" type="datetime-local"></label>
+        <div class="row due-chips" role="group" aria-label="Due">
+          <button type="button" class="chip" data-due="today">Today</button>
+          <button type="button" class="chip" data-due="tomorrow">Tomorrow</button>
+          <button type="button" class="chip" data-due="week">+1 week</button>
+          <button type="button" class="chip" id="due-pick" data-due="custom">📅 <span>Pick</span></button>
+          <input id="urgent-due" type="datetime-local" class="visually-hidden" tabindex="-1" aria-label="Due date and time">
         </div>
         <div class="row">
           <input id="urgent-text" placeholder="e.g. dentist fri 3pm" aria-label="Urgent note" enterkeyhint="done">
@@ -101,10 +105,10 @@
   </main>
 
   <nav id="tabs" hidden>
+    <a href="#thoughts" data-view="thoughts"><span>💭</span>Thoughts<b id="thought-badge" hidden></b></a>
+    <a href="#facts" data-view="facts"><span>📌</span>Facts</a>
     <a href="#scratch" data-view="scratch"><span>✏️</span>Scratch</a>
     <a href="#urgent" data-view="urgent"><span>⏰</span>Urgent<b id="urgent-badge" hidden></b></a>
-    <a href="#facts" data-view="facts"><span>📌</span>Facts</a>
-    <a href="#thoughts" data-view="thoughts"><span>💭</span>Thoughts<b id="thought-badge" hidden></b></a>
   </nav>
 
   <dialog id="edit">

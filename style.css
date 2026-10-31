@@ -129,6 +129,23 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 .due-label { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.9rem; }
 .due-label input { padding: 0.3rem 0.5rem; font-size: 0.9rem; }
 
+/* One-tap due buttons above the urgent text box. */
+.dock .due-chips { gap: 0.4rem; overflow-x: auto; scrollbar-width: none; }
+.chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  box-sizing: border-box;
+  height: 2.1rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.chip.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
+#due-pick { margin-left: auto; }
+
 #fact-search { width: 100%; }
 .hint { font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; }
 .hint:empty { display: none; }

@@ -268,13 +268,68 @@ setInterval(renderUrgent, 60_000);
 
 // ---------- capture forms ----------
 
-// Urgent: typing a date fills the due field until the user edits it by hand.
+// Urgent due date: one-tap chips (Today / Tomorrow / +1 week), the native date-time
+// picker (📅), or a date typed in the text ("dentist fri 3pm"). A tapped chip or picked
+// date wins over typed text. The chosen time lives in the hidden #urgent-due input.
 let dueTouched = false;
+let dueChip = null; // "today" | "tomorrow" | "week" | "custom" | null
+
+function chipDate(kind) {
+  const d = new Date();
+  if (kind === "today") {
+    d.setHours(17, 0, 0, 0); // end of the working day...
+    if (d <= Date.now()) { // ...or an hour from now (rounded up) if that's already past
+      d.setTime(Date.now() + 60 * 60_000);
+      d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+    }
+    return d;
+  }
+  d.setDate(d.getDate() + (kind === "tomorrow" ? 1 : 7));
+  d.setHours(DEFAULT_DUE_HOUR, 0, 0, 0);
+  return d;
+}
+
+function setDue(date, chip) {
+  $("urgent-due").value = toLocalInput(date);
+  dueChip = date ? chip : null;
+  for (const b of document.querySelectorAll("#urgent-form .chip")) b.classList.toggle("active", b.dataset.due === dueChip);
+  // The 📅 chip shows the chosen date when it came from the picker or the typed text.
+  $("due-pick").querySelector("span").textContent = dueChip === "custom"
+    ? date.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+    : "Pick";
+}
+
+for (const chip of document.querySelectorAll("#urgent-form .chip")) {
+  // Keep focus (and the keyboard) on the text box while tapping chips.
+  chip.addEventListener("pointerdown", (e) => e.preventDefault());
+}
+for (const chip of document.querySelectorAll("#urgent-form .chip:not(#due-pick)")) {
+  chip.addEventListener("click", () => {
+    const kind = chip.dataset.due;
+    if (dueChip === kind) { // tap again to clear
+      dueTouched = false;
+      setDue(parseDue($("urgent-text").value)?.date ?? null, "custom");
+    } else {
+      dueTouched = true;
+      setDue(chipDate(kind), kind);
+    }
+    $("urgent-text").focus();
+  });
+}
+$("due-pick").addEventListener("click", () => {
+  const input = $("urgent-due");
+  if (!input.value) input.value = toLocalInput(chipDate("tomorrow"));
+  try { input.showPicker(); } catch { input.focus(); }
+});
+$("urgent-due").addEventListener("change", () => {
+  dueTouched = true;
+  setDue(fromLocalInput($("urgent-due").value), "custom");
+});
+
 $("urgent-text").addEventListener("input", () => {
   if (dueTouched) return;
-  $("urgent-due").value = toLocalInput(parseDue($("urgent-text").value)?.date);
+  setDue(parseDue($("urgent-text").value)?.date ?? null, "custom");
 });
-$("urgent-due").addEventListener("input", () => { dueTouched = true; });
 
 $("urgent-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -286,6 +341,8 @@ $("urgent-form").addEventListener("submit", async (e) => {
   const text = parsed && !dueTouched ? parsed.text : raw;
   $("urgent-form").reset();
   dueTouched = false;
+  setDue(null);
+  $("urgent-text").focus(); // keep the keyboard up for the next one
   await guard(addDoc(notesCol, {
     type: "urgent", text, due: due ? Timestamp.fromDate(due) : null, done: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
