@@ -241,3 +241,15 @@ dialog::backdrop { background: rgb(0 0 0 / 0.45); }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Link to the home page (alexknight0.github.io/home/), only in a normal browser tab with a mouse.
+   Hidden on phones/tablets and in installed apps, where it would open home inside this app. */
+.home-link { display: none; }
+@media (pointer: fine) and (display-mode: browser) {
+  .home-link {
+    display: inline-flex; align-items: center; flex: none; padding: 4px; border-radius: 6px;
+    color: inherit; opacity: 0.65;
+  }
+  .home-link:hover, .home-link:focus-visible { opacity: 1; }
+}
+.home-link svg { width: 20px; height: 20px; display: block; }
