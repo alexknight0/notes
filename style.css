@@ -87,6 +87,9 @@ h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
 /* Wide screens with a mouse: input at the top, like a normal page. */
 @media (min-width: 700px) and (pointer: fine) {
   .dock { order: -1; border-top: none; padding-top: var(--pad); }
+  /* Room to write, like the edit dialog's 5-line box; still grows with the text. */
+  .dock textarea { min-height: 8.7rem; max-height: 50vh; resize: vertical; }
+  .dock .row:has(> textarea) { align-items: flex-start; }
 }
 
 button, .file-btn {

@@ -451,6 +451,14 @@ $("task-text").addEventListener("input", () => {
   if (dueTouched) return;
   setDue(parseDue($("task-text").value)?.date ?? null, "custom");
 });
+// Tasks are usually one line: Enter adds it (as when this was a single-line input);
+// Shift+Enter starts a new line.
+$("task-text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    e.target.form.requestSubmit();
+  }
+});
 
 $("task-form").addEventListener("submit", async (e) => {
   e.preventDefault();
