@@ -349,7 +349,11 @@ $("urgent-text").addEventListener("input", () => {
 $("urgent-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const raw = $("urgent-text").value.trim();
-  if (!raw) return;
+  if (!raw) {
+    // Empty Add opens the bigger editor, keeping any due date already chosen.
+    openEditor({ type: "urgent", text: "", due: fromLocalInput($("urgent-due").value) });
+    return;
+  }
   const parsed = parseDue(raw);
   const due = fromLocalInput($("urgent-due").value);
   // Only strip the date words when the due time still comes from them.
@@ -382,7 +386,10 @@ $("fact-image-clear").addEventListener("click", clearFactImage);
 $("fact-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("fact-text").value.trim();
-  if (!text && !pendingFactImage) return;
+  if (!text && !pendingFactImage) {
+    openEditor({ type: "fact", text: "" }); // empty Add opens the bigger editor
+    return;
+  }
   const image = pendingFactImage;
   $("fact-text").value = "";
   clearFactImage();
@@ -396,7 +403,10 @@ $("fact-form").addEventListener("submit", async (e) => {
 $("thought-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("thought-text").value.trim();
-  if (!text) return;
+  if (!text) {
+    openEditor({ type: "thought", text: "" }); // empty Add opens the bigger editor
+    return;
+  }
   $("thought-text").value = "";
   await guard(addDoc(notesCol, {
     type: "thought", text, archived: false,
@@ -477,7 +487,7 @@ $("fact-search").addEventListener("keydown", (e) => {
 // ---------- edit dialog ----------
 
 const dialog = $("edit");
-let editing = null; // {note, image}
+let editing = null; // {note, image}; a note without an id is a new note
 
 function openEditor(note) {
   editing = { note, image: note.image ?? null };
@@ -485,8 +495,11 @@ function openEditor(note) {
   $("edit-type").value = note.type;
   $("edit-text").value = note.text;
   $("edit-due").value = toLocalInput(toDate(note.due));
+  $("edit-delete").hidden = !note.id;
+  $("edit-save").textContent = note.id ? "Save" : "Add";
   syncEditorFields();
   dialog.showModal();
+  if (!note.id) $("edit-text").focus();
 }
 
 function syncEditorFields() {
@@ -495,6 +508,7 @@ function syncEditorFields() {
   $("edit-image-wrap").hidden = type !== "fact" && !editing.image;
   $("edit-image").hidden = !editing.image;
   $("edit-image-remove").hidden = !editing.image;
+  $("edit-image-label").textContent = editing.image ? "📷 Replace photo" : "📷 Add photo";
   if (editing.image) $("edit-image").src = editing.image;
 }
 $("edit-type").addEventListener("change", syncEditorFields);
@@ -521,6 +535,11 @@ dialog.addEventListener("close", async () => {
   const type = $("edit-type").value;
   const text = $("edit-text").value.trim();
   const due = fromLocalInput($("edit-due").value);
+  dialog.returnValue = "";
+  if (!note.id) {
+    await addFromEditor(type, text, due, image);
+    return;
+  }
   const changes = { type, text, image, updatedAt: serverTimestamp() };
   if (type === "urgent") {
     changes.due = due ? Timestamp.fromDate(due) : null;
@@ -528,10 +547,30 @@ dialog.addEventListener("close", async () => {
   }
   if (type === "thought" && note.type !== "thought") changes.archived = false;
   if (text !== note.text || type !== note.type) changes.embedding = null; // recomputed by backfill
-  dialog.returnValue = "";
   await guard(updateDoc(doc(notesCol, note.id), changes), "save");
   backfillEmbeddings();
 });
+
+// Add a new note written in the editor dialog (opened by Add with an empty box).
+async function addFromEditor(type, text, due, image) {
+  if (!text && !(type === "fact" && image)) return;
+  const note = { type, text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+  if (type === "urgent") {
+    // Like the quick-add box: with no due date set, take it from the text ("dentist fri 3pm").
+    const parsed = due ? null : parseDue(text);
+    if (parsed) { note.text = parsed.text; due = parsed.date; }
+    Object.assign(note, { due: due ? Timestamp.fromDate(due) : null, done: false });
+    $("urgent-form").reset();
+    dueTouched = false;
+    setDue(null);
+  } else if (type === "fact") {
+    Object.assign(note, { image, embedding: null });
+  } else {
+    note.archived = false;
+  }
+  await guard(addDoc(notesCol, note), "add");
+  if (type === "fact") backfillEmbeddings();
+}
 
 // ---------- auth & live data ----------
 
