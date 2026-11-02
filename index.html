@@ -38,25 +38,49 @@
       <button id="scratch-clear" type="button" class="small" hidden>Clear</button>
     </section>
 
-    <!-- 1. Urgent / deadlines -->
-    <section id="view-urgent" class="view" data-title="Urgent" hidden>
+    <!-- 1. Tasks / deadlines -->
+    <section id="view-tasks" class="view" data-title="Tasks" hidden>
       <div class="scroll">
-        <ul id="urgent-list" class="list"></ul>
-        <details id="urgent-done-wrap" hidden>
-          <summary>Done (<span id="urgent-done-count">0</span>)</summary>
-          <ul id="urgent-done" class="list"></ul>
+        <ul id="task-list" class="list"></ul>
+        <details id="task-done-wrap" hidden>
+          <summary>Done (<span id="task-done-count">0</span>)</summary>
+          <ul id="task-done" class="list"></ul>
         </details>
       </div>
-      <form class="dock" id="urgent-form" autocomplete="off">
+      <form class="dock" id="task-form" autocomplete="off">
         <div class="row due-chips" role="group" aria-label="Due">
           <button type="button" class="chip" data-due="today">Today</button>
           <button type="button" class="chip" data-due="tomorrow">Tomorrow</button>
           <button type="button" class="chip" data-due="week">+1 week</button>
           <button type="button" class="chip" id="due-pick" data-due="custom">📅 <span>Pick</span></button>
-          <input id="urgent-due" type="datetime-local" class="visually-hidden" tabindex="-1" aria-label="Due date and time">
+          <input id="task-due" type="datetime-local" class="visually-hidden" tabindex="-1" aria-label="Due date and time">
         </div>
         <div class="row">
-          <input id="urgent-text" placeholder="e.g. dentist fri 3pm" aria-label="Urgent note" enterkeyhint="done">
+          <input id="task-text" placeholder="e.g. dentist fri 3pm" aria-label="Task" enterkeyhint="done">
+          <button type="submit">Add</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Library: ideas, thoughts and facts share one bottom tab and switch here. -->
+    <nav id="subtabs" class="segmented" aria-label="Library" hidden>
+      <a href="#ideas" data-view="ideas">💡 Ideas</a>
+      <a href="#thoughts" data-view="thoughts">💭 Thoughts<b id="thought-subbadge" hidden></b></a>
+      <a href="#facts" data-view="facts">📌 Facts</a>
+    </nav>
+
+    <!-- 2.3. Ideas: like thoughts, but no review cycle -->
+    <section id="view-ideas" class="view" data-title="Ideas" hidden>
+      <div class="scroll">
+        <ul id="idea-list" class="list"></ul>
+        <details id="idea-archived-wrap" hidden>
+          <summary>Archived (<span id="idea-archived-count">0</span>)</summary>
+          <ul id="idea-archived" class="list"></ul>
+        </details>
+      </div>
+      <form class="dock" id="idea-form" autocomplete="off">
+        <div class="row">
+          <textarea id="idea-text" rows="1" placeholder="New idea…" aria-label="Idea"></textarea>
           <button type="submit">Add</button>
         </div>
       </form>
@@ -107,19 +131,19 @@
   </main>
 
   <nav id="tabs" hidden>
-    <a href="#thoughts" data-view="thoughts"><span>💭</span>Thoughts<b id="thought-badge" hidden></b></a>
-    <a href="#facts" data-view="facts"><span>📌</span>Facts</a>
+    <a href="#ideas" id="library-tab" data-view="library"><span>📚</span>Library<b id="thought-badge" hidden></b></a>
     <a href="#scratch" data-view="scratch"><span>✏️</span>Scratch</a>
-    <a href="#urgent" data-view="urgent"><span>⏰</span>Urgent<b id="urgent-badge" hidden></b></a>
+    <a href="#tasks" data-view="tasks"><span>⏰</span>Tasks<b id="task-badge" hidden></b></a>
   </nav>
 
   <dialog id="edit">
     <form method="dialog" id="edit-form">
       <label>Type
         <select id="edit-type">
-          <option value="urgent">Urgent</option>
-          <option value="fact">Fact</option>
+          <option value="task">Task</option>
+          <option value="idea">Idea</option>
           <option value="thought">Thought</option>
+          <option value="fact">Fact</option>
         </select>
       </label>
       <textarea id="edit-text" rows="5" aria-label="Text"></textarea>

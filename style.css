@@ -138,7 +138,7 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 .due-label { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); font-size: 0.9rem; }
 .due-label input { padding: 0.3rem 0.5rem; font-size: 0.9rem; }
 
-/* One-tap due buttons above the urgent text box. */
+/* One-tap due buttons above the task text box. */
 .dock .due-chips { gap: 0.4rem; overflow-x: auto; scrollbar-width: none; }
 .chip {
   flex: none;
@@ -183,6 +183,42 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 .list li .thumb { flex: none; cursor: pointer; }
 
 .list-head { display: flex; align-items: center; justify-content: space-between; }
+
+/* Ideas / Thoughts / Facts switcher at the top of the Library tab. */
+.segmented {
+  flex: none;
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem var(--pad) 0;
+  padding: 0.2rem;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+.segmented a {
+  position: relative;
+  flex: 1;
+  padding: 0.4rem 0.3rem;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.segmented a.active { background: Canvas; color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); }
+.segmented b {
+  display: inline-block;
+  margin-left: 0.3rem;
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  box-sizing: border-box;
+  border-radius: 1rem;
+  background: var(--danger);
+  color: white;
+  font-size: 0.7rem;
+  line-height: 1.1rem;
+}
 details summary { cursor: pointer; color: var(--muted); margin-top: 1rem; }
 
 #status { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; margin: 0.3rem 0 0; }

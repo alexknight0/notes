@@ -1,10 +1,11 @@
 // Notes app: Google sign-in (Firebase Auth) + Firestore.
 // Data (all restricted to the owner by firestore.rules):
 //   users/{uid}             { scratch, scratchUpdatedAt, thoughtsReviewedAt }
-//   users/{uid}/notes/{id}  { type: "urgent"|"fact"|"thought", text, createdAt, updatedAt,
-//                             due?, done?          (urgent)
+//   users/{uid}/notes/{id}  { type: "task"|"idea"|"thought"|"fact", text, createdAt, updatedAt,
+//                             due?, done?          (task; stored as "urgent" before 2026-11-03,
+//                                                   migrated on load by migrateUrgentToTask)
 //                             image?, embedding?   (fact; image is a JPEG data URL)
-//                             archived?, reviewedAt? (thought) }
+//                             archived?            (idea, thought) }
 //   notes/{uid}             { text }  — the original single note, migrated into scratch once.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {
@@ -134,14 +135,37 @@ function el(tag, props = {}, ...children) {
 
 // ---------- views / routing ----------
 
-const VIEWS = ["scratch", "urgent", "facts", "thoughts"];
+const VIEWS = ["scratch", "tasks", "ideas", "thoughts", "facts"];
+// Ideas, thoughts and facts share the Library tab, which reopens whichever was used last.
+const LIBRARY = ["ideas", "thoughts", "facts"];
+const LIBRARY_KEY = "notes.libraryView"; // localStorage is shared by all of Alex's sites, so prefix it
+const OLD_HASHES = { urgent: "tasks" }; // old links and home-screen shortcuts
+
+function currentView() {
+  const hash = location.hash.slice(1);
+  const view = OLD_HASHES[hash] ?? hash;
+  return VIEWS.includes(view) ? view : "scratch";
+}
 
 function route() {
-  const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "scratch";
+  const view = currentView();
+  const inLibrary = LIBRARY.includes(view);
+  if (inLibrary) {
+    localStorage.setItem(LIBRARY_KEY, view);
+    $("library-tab").href = `#${view}`;
+  }
   for (const v of VIEWS) $(`view-${v}`).hidden = v !== view;
-  for (const a of document.querySelectorAll("#tabs a")) a.classList.toggle("active", a.dataset.view === view);
+  $("subtabs").hidden = !inLibrary;
+  for (const a of document.querySelectorAll("#subtabs a")) a.classList.toggle("active", a.dataset.view === view);
+  for (const a of document.querySelectorAll("#tabs a")) {
+    a.classList.toggle("active", a.dataset.view === (inLibrary ? "library" : view));
+  }
   $("view-title").textContent = $(`view-${view}`).dataset.title;
   if (view === "facts") startSemanticSearch();
+}
+{
+  const saved = localStorage.getItem(LIBRARY_KEY);
+  if (LIBRARY.includes(saved)) $("library-tab").href = `#${saved}`;
 }
 window.addEventListener("hashchange", route);
 
@@ -193,11 +217,11 @@ function fillList(list, items, emptyText) {
   list.replaceChildren(...(items.length ? items : [el("li", { class: "empty", textContent: emptyText })]));
 }
 
-function renderUrgent() {
-  const urgent = notes.filter((n) => n.type === "urgent");
-  const open = urgent.filter((n) => !n.done)
+function renderTasks() {
+  const tasks = notes.filter((n) => n.type === "task");
+  const open = tasks.filter((n) => !n.done)
     .sort((a, b) => (toDate(a.due)?.getTime() ?? Infinity) - (toDate(b.due)?.getTime() ?? Infinity));
-  const done = urgent.filter((n) => n.done).sort((a, b) => toDate(b.updatedAt) - toDate(a.updatedAt));
+  const done = tasks.filter((n) => n.done).sort((a, b) => toDate(b.updatedAt) - toDate(a.updatedAt));
   const now = Date.now();
 
   const item = (n) => {
@@ -212,14 +236,14 @@ function renderUrgent() {
       extraClass: n.done ? "done" : due && due < now ? "overdue" : "",
     });
   };
-  fillList($("urgent-list"), open.map(item), "Nothing urgent 🎉");
-  $("urgent-done").replaceChildren(...done.map(item));
-  $("urgent-done-count").textContent = done.length;
-  $("urgent-done-wrap").hidden = !done.length;
+  fillList($("task-list"), open.map(item), "No tasks 🎉");
+  $("task-done").replaceChildren(...done.map(item));
+  $("task-done-count").textContent = done.length;
+  $("task-done-wrap").hidden = !done.length;
 
   const overdue = open.filter((n) => n.due && toDate(n.due) < now).length;
-  $("urgent-badge").textContent = overdue;
-  $("urgent-badge").hidden = !overdue;
+  $("task-badge").textContent = overdue;
+  $("task-badge").hidden = !overdue;
 }
 
 let factQueryEmbedding = null;
@@ -248,44 +272,60 @@ function renderThoughts() {
   const older = live.filter((n) => toDate(n.createdAt) <= cutoff);
   const archived = thoughts.filter((n) => n.archived);
 
-  const convert = (n, type, label) => el("button", {
-    type: "button", class: "small", textContent: label,
-    onclick: () => guard(updateDoc(doc(notesCol, n.id), { type, updatedAt: serverTimestamp() }), "move"),
-  });
-  const item = (n) => noteItem(n, {
-    meta: toDate(n.createdAt)?.toLocaleDateString(),
-    actions: [
-      convert(n, "urgent", "→ Urgent"),
-      convert(n, "fact", "→ Fact"),
-      el("button", {
-        type: "button", class: "small", textContent: n.archived ? "Unarchive" : "Archive",
-        onclick: () => guard(updateDoc(doc(notesCol, n.id), { archived: !n.archived, updatedAt: serverTimestamp() }), "archive"),
-      }),
-    ],
-  });
+  const item = (n) => noteItem(n, { meta: toDate(n.createdAt)?.toLocaleDateString(), actions: moveActions(n) });
   fillList($("thought-new"), fresh.map(item), "Nothing new since your last review");
   fillList($("thought-old"), older.map(item), "Nothing here");
   $("thought-archived").replaceChildren(...archived.map(item));
   $("thought-archived-count").textContent = archived.length;
   $("thought-archived-wrap").hidden = !archived.length;
   $("thoughts-reviewed").hidden = !fresh.length;
-  $("thought-badge").textContent = fresh.length;
-  $("thought-badge").hidden = !fresh.length;
+  for (const id of ["thought-badge", "thought-subbadge"]) {
+    $(id).textContent = fresh.length;
+    $(id).hidden = !fresh.length;
+  }
+}
+
+// → Task / → Fact / Archive buttons on thoughts and ideas.
+function moveActions(n) {
+  const convert = (type, label) => el("button", {
+    type: "button", class: "small", textContent: label,
+    onclick: () => guard(updateDoc(doc(notesCol, n.id), { type, updatedAt: serverTimestamp() }), "move"),
+  });
+  return [
+    convert("task", "→ Task"),
+    convert("fact", "→ Fact"),
+    el("button", {
+      type: "button", class: "small", textContent: n.archived ? "Unarchive" : "Archive",
+      onclick: () => guard(updateDoc(doc(notesCol, n.id), { archived: !n.archived, updatedAt: serverTimestamp() }), "archive"),
+    }),
+  ];
+}
+
+function renderIdeas() {
+  const ideas = notes.filter((n) => n.type === "idea")
+    .sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  const item = (n) => noteItem(n, { meta: toDate(n.createdAt)?.toLocaleDateString(), actions: moveActions(n) });
+  const archived = ideas.filter((n) => n.archived);
+  fillList($("idea-list"), ideas.filter((n) => !n.archived).map(item), "No ideas yet");
+  $("idea-archived").replaceChildren(...archived.map(item));
+  $("idea-archived-count").textContent = archived.length;
+  $("idea-archived-wrap").hidden = !archived.length;
 }
 
 function renderAll() {
-  renderUrgent();
-  renderFacts();
+  renderTasks();
+  renderIdeas();
   renderThoughts();
+  renderFacts();
 }
 // Keep "in 2 hours" / overdue state fresh.
-setInterval(renderUrgent, 60_000);
+setInterval(renderTasks, 60_000);
 
 // ---------- capture forms ----------
 
-// Urgent due date: one-tap chips (Today / Tomorrow / +1 week), the native date-time
+// Task due date: one-tap chips (Today / Tomorrow / +1 week), the native date-time
 // picker (📅), or a date typed in the text ("dentist fri 3pm"). A tapped chip or picked
-// date wins over typed text. The chosen time lives in the hidden #urgent-due input.
+// date wins over typed text. The chosen time lives in the hidden #task-due input.
 let dueTouched = false;
 let dueChip = null; // "today" | "tomorrow" | "week" | "custom" | null
 
@@ -305,65 +345,65 @@ function chipDate(kind) {
 }
 
 function setDue(date, chip) {
-  $("urgent-due").value = toLocalInput(date);
+  $("task-due").value = toLocalInput(date);
   dueChip = date ? chip : null;
-  for (const b of document.querySelectorAll("#urgent-form .chip")) b.classList.toggle("active", b.dataset.due === dueChip);
+  for (const b of document.querySelectorAll("#task-form .chip")) b.classList.toggle("active", b.dataset.due === dueChip);
   // The 📅 chip shows the chosen date when it came from the picker or the typed text.
   $("due-pick").querySelector("span").textContent = dueChip === "custom"
     ? date.toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
     : "Pick";
 }
 
-for (const chip of document.querySelectorAll("#urgent-form .chip")) {
+for (const chip of document.querySelectorAll("#task-form .chip")) {
   // Keep focus (and the keyboard) on the text box while tapping chips.
   chip.addEventListener("pointerdown", (e) => e.preventDefault());
 }
-for (const chip of document.querySelectorAll("#urgent-form .chip:not(#due-pick)")) {
+for (const chip of document.querySelectorAll("#task-form .chip:not(#due-pick)")) {
   chip.addEventListener("click", () => {
     const kind = chip.dataset.due;
     if (dueChip === kind) { // tap again to clear
       dueTouched = false;
-      setDue(parseDue($("urgent-text").value)?.date ?? null, "custom");
+      setDue(parseDue($("task-text").value)?.date ?? null, "custom");
     } else {
       dueTouched = true;
       setDue(chipDate(kind), kind);
     }
-    $("urgent-text").focus();
+    $("task-text").focus();
   });
 }
 $("due-pick").addEventListener("click", () => {
-  const input = $("urgent-due");
+  const input = $("task-due");
   if (!input.value) input.value = toLocalInput(chipDate("tomorrow"));
   try { input.showPicker(); } catch { input.focus(); }
 });
-$("urgent-due").addEventListener("change", () => {
+$("task-due").addEventListener("change", () => {
   dueTouched = true;
-  setDue(fromLocalInput($("urgent-due").value), "custom");
+  setDue(fromLocalInput($("task-due").value), "custom");
 });
 
-$("urgent-text").addEventListener("input", () => {
+$("task-text").addEventListener("input", () => {
   if (dueTouched) return;
-  setDue(parseDue($("urgent-text").value)?.date ?? null, "custom");
+  setDue(parseDue($("task-text").value)?.date ?? null, "custom");
 });
 
-$("urgent-form").addEventListener("submit", async (e) => {
+$("task-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const raw = $("urgent-text").value.trim();
+  const raw = $("task-text").value.trim();
   if (!raw) {
     // Empty Add opens the bigger editor, keeping any due date already chosen.
-    openEditor({ type: "urgent", text: "", due: fromLocalInput($("urgent-due").value) });
+    openEditor({ type: "task", text: "", due: fromLocalInput($("task-due").value) });
     return;
   }
   const parsed = parseDue(raw);
-  const due = fromLocalInput($("urgent-due").value);
+  const due = fromLocalInput($("task-due").value);
   // Only strip the date words when the due time still comes from them.
   const text = parsed && !dueTouched ? parsed.text : raw;
-  $("urgent-form").reset();
+  $("task-form").reset();
   dueTouched = false;
   setDue(null);
-  $("urgent-text").focus(); // keep the keyboard up for the next one
+  $("task-text").focus(); // keep the keyboard up for the next one
   await guard(addDoc(notesCol, {
-    type: "urgent", text, due: due ? Timestamp.fromDate(due) : null, done: false,
+    type: "task", text, due: due ? Timestamp.fromDate(due) : null, done: false,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }), "add");
 });
@@ -414,11 +454,25 @@ $("thought-form").addEventListener("submit", async (e) => {
   }), "add");
 });
 
+$("idea-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("idea-text").value.trim();
+  if (!text) {
+    openEditor({ type: "idea", text: "" }); // empty Add opens the bigger editor
+    return;
+  }
+  $("idea-text").value = "";
+  await guard(addDoc(notesCol, {
+    type: "idea", text, archived: false,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }), "add");
+});
+
 $("thoughts-reviewed").addEventListener("click", () =>
   guard(setDoc(userRef, { thoughtsReviewedAt: serverTimestamp() }, { merge: true }), "save"));
 
 // Ctrl/Cmd+Enter submits the multi-line capture boxes.
-for (const id of ["fact-text", "thought-text"]) {
+for (const id of ["fact-text", "thought-text", "idea-text"]) {
   $(id).addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.target.form.requestSubmit();
   });
@@ -504,7 +558,7 @@ function openEditor(note) {
 
 function syncEditorFields() {
   const type = $("edit-type").value;
-  $("edit-due-wrap").hidden = type !== "urgent";
+  $("edit-due-wrap").hidden = type !== "task";
   $("edit-image-wrap").hidden = type !== "fact" && !editing.image;
   $("edit-image").hidden = !editing.image;
   $("edit-image-remove").hidden = !editing.image;
@@ -541,11 +595,11 @@ dialog.addEventListener("close", async () => {
     return;
   }
   const changes = { type, text, image, updatedAt: serverTimestamp() };
-  if (type === "urgent") {
+  if (type === "task") {
     changes.due = due ? Timestamp.fromDate(due) : null;
-    changes.done = note.type === "urgent" ? Boolean(note.done) : false;
+    changes.done = note.type === "task" ? Boolean(note.done) : false;
   }
-  if (type === "thought" && note.type !== "thought") changes.archived = false;
+  if ((type === "thought" || type === "idea") && type !== note.type) changes.archived = false;
   if (text !== note.text || type !== note.type) changes.embedding = null; // recomputed by backfill
   await guard(updateDoc(doc(notesCol, note.id), changes), "save");
   backfillEmbeddings();
@@ -555,12 +609,12 @@ dialog.addEventListener("close", async () => {
 async function addFromEditor(type, text, due, image) {
   if (!text && !(type === "fact" && image)) return;
   const note = { type, text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
-  if (type === "urgent") {
+  if (type === "task") {
     // Like the quick-add box: with no due date set, take it from the text ("dentist fri 3pm").
     const parsed = due ? null : parseDue(text);
     if (parsed) { note.text = parsed.text; due = parsed.date; }
     Object.assign(note, { due: due ? Timestamp.fromDate(due) : null, done: false });
-    $("urgent-form").reset();
+    $("task-form").reset();
     dueTouched = false;
     setDue(null);
   } else if (type === "fact") {
@@ -573,6 +627,13 @@ async function addFromEditor(type, text, due, image) {
 }
 
 // ---------- auth & live data ----------
+
+// Tasks were called "urgent" notes until 2026-11-03; rename any still stored that way.
+function migrateUrgentToTask(docs) {
+  for (const d of docs) {
+    if (d.data().type === "urgent") updateDoc(d.ref, { type: "task" }).catch((err) => console.warn("migrate", err));
+  }
+}
 
 // One-time copy of the original single note into the scratch pad.
 async function migrateOldNote(user) {
@@ -623,7 +684,12 @@ onAuthStateChanged(auth, (user) => {
   }, (err) => setStatus(`Couldn't load: ${err.message}`, true)));
 
   unsubs.push(onSnapshot(notesCol, (snap) => {
-    notes = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    notes = snap.docs.map((d) => {
+      const n = { id: d.id, ...d.data({ serverTimestamps: "estimate" }) };
+      if (n.type === "urgent") n.type = "task";
+      return n;
+    });
+    if (!snap.metadata.fromCache) migrateUrgentToTask(snap.docs);
     renderAll();
     backfillEmbeddings();
   }, (err) => setStatus(`Couldn't load notes: ${err.message}`, true)));
@@ -686,8 +752,8 @@ import("https://cdn.jsdelivr.net/gh/alexknight0/pages-common@1.0.0/update.js")
     }
   });
 
-// Opened from a home-screen shortcut (e.g. ./#urgent): jump straight into the capture box.
+// Opened from a home-screen shortcut (e.g. ./#tasks): jump straight into the capture box.
 if (location.hash) {
-  const target = { urgent: "urgent-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch" }[location.hash.slice(1)];
+  const target = { tasks: "task-text", ideas: "idea-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch" }[currentView()];
   if (target) setTimeout(() => $(target).focus(), 300);
 }
