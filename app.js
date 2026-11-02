@@ -5,7 +5,8 @@
 //                             due?, done?          (task; stored as "urgent" before 2026-11-03,
 //                                                   migrated on load by migrateUrgentToTask)
 //                             image?, embedding?   (fact; image is a JPEG data URL)
-//                             archived?            (idea, thought) }
+//                             archived?            (idea, thought)
+//                             tags?                (idea; array of strings) }
 //   notes/{uid}             { text }  — the original single note, migrated into scratch once.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {
@@ -202,9 +203,16 @@ scratch.addEventListener("input", () => {
 
 // ---------- rendering ----------
 
-function noteItem(note, { leading, actions = [], meta, extraClass = "" } = {}) {
+function noteItem(note, { leading, actions = [], meta, extraClass = "", onTag } = {}) {
+  const tags = onTag && note.tags?.length
+    ? el("div", { class: "tags" }, ...note.tags.map((t) => el("button", {
+      type: "button", class: "tag", textContent: t, title: `Show only “${t}”`,
+      onclick: (e) => { e.stopPropagation(); onTag(t); },
+    })))
+    : null;
   const body = el("div", { class: "body", onclick: () => openEditor(note) },
     el("div", { class: "text", textContent: note.text }),
+    tags,
     meta ? el("div", { class: "meta", textContent: meta }) : null);
   const thumb = note.image
     ? el("img", { class: "thumb", src: note.image, alt: "", onclick: () => openEditor(note) })
@@ -301,12 +309,70 @@ function moveActions(n) {
   ];
 }
 
+// ---------- idea tags ----------
+
+let ideaFilter = null; // show only ideas with this tag
+let newIdeaTag = ""; // tag picked in the idea dock; kept for the next idea too
+
+// Every tag used on any idea (archived too), A–Z.
+function usedTags() {
+  const tags = new Set(notes.filter((n) => n.type === "idea").flatMap((n) => n.tags ?? []));
+  return [...tags].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+// Tidy a typed tag; reuse an existing tag's spelling if it differs only in case.
+function cleanTag(raw) {
+  const tag = raw.trim().replace(/\s+/g, " ");
+  if (!tag) return "";
+  return usedTags().find((t) => t.toLowerCase() === tag.toLowerCase()) ?? tag;
+}
+
+function setIdeaFilter(tag) {
+  ideaFilter = ideaFilter === tag ? null : tag;
+  renderIdeas();
+}
+
+function renderTagPickers(tags) {
+  // Dock dropdown: No tag / every used tag / New tag…
+  const pick = $("idea-tag");
+  const options = newIdeaTag && !tags.includes(newIdeaTag) ? [...tags, newIdeaTag] : tags;
+  pick.replaceChildren(
+    el("option", { value: "", textContent: "🏷 No tag" }),
+    ...options.map((t) => el("option", { value: t, textContent: `🏷 ${t}` })),
+    el("option", { value: "__new", textContent: "+ New tag…" }));
+  pick.value = newIdeaTag;
+  // Editor suggestions.
+  $("tag-options").replaceChildren(...tags.map((t) => el("option", { value: t })));
+}
+
+$("idea-tag").addEventListener("change", (e) => {
+  if (e.target.value === "__new") {
+    newIdeaTag = cleanTag(prompt("New tag") ?? "") || newIdeaTag;
+  } else {
+    newIdeaTag = e.target.value;
+  }
+  renderTagPickers(usedTags());
+});
+
 function renderIdeas() {
   const ideas = notes.filter((n) => n.type === "idea")
     .sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
-  const item = (n) => noteItem(n, { meta: toDate(n.createdAt)?.toLocaleDateString(), actions: moveActions(n) });
-  const archived = ideas.filter((n) => n.archived);
-  fillList($("idea-list"), ideas.filter((n) => !n.archived).map(item), "No ideas yet");
+  const tags = usedTags();
+  if (ideaFilter && !tags.includes(ideaFilter)) ideaFilter = null;
+  $("idea-filter").hidden = !tags.length;
+  $("idea-filter").replaceChildren(
+    el("button", { type: "button", class: `chip${ideaFilter ? "" : " active"}`, textContent: "All", onclick: () => setIdeaFilter(null) }),
+    ...tags.map((t) => el("button", {
+      type: "button", class: `chip${ideaFilter === t ? " active" : ""}`, textContent: t, onclick: () => setIdeaFilter(t),
+    })));
+  renderTagPickers(tags);
+
+  const shown = ideaFilter ? ideas.filter((n) => n.tags?.includes(ideaFilter)) : ideas;
+  const item = (n) => noteItem(n, {
+    meta: toDate(n.createdAt)?.toLocaleDateString(), actions: moveActions(n), onTag: setIdeaFilter,
+  });
+  const archived = shown.filter((n) => n.archived);
+  fillList($("idea-list"), shown.filter((n) => !n.archived).map(item), ideaFilter ? `No ideas tagged “${ideaFilter}”` : "No ideas yet");
   $("idea-archived").replaceChildren(...archived.map(item));
   $("idea-archived-count").textContent = archived.length;
   $("idea-archived-wrap").hidden = !archived.length;
@@ -458,12 +524,12 @@ $("idea-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("idea-text").value.trim();
   if (!text) {
-    openEditor({ type: "idea", text: "" }); // empty Add opens the bigger editor
+    openEditor({ type: "idea", text: "", tags: newIdeaTag ? [newIdeaTag] : [] }); // empty Add opens the bigger editor
     return;
   }
   $("idea-text").value = "";
   await guard(addDoc(notesCol, {
-    type: "idea", text, archived: false,
+    type: "idea", text, archived: false, tags: newIdeaTag ? [newIdeaTag] : [],
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }), "add");
 });
@@ -541,10 +607,11 @@ $("fact-search").addEventListener("keydown", (e) => {
 // ---------- edit dialog ----------
 
 const dialog = $("edit");
-let editing = null; // {note, image}; a note without an id is a new note
+let editing = null; // {note, image, tags}; a note without an id is a new note
 
 function openEditor(note) {
-  editing = { note, image: note.image ?? null };
+  editing = { note, image: note.image ?? null, tags: [...(note.tags ?? [])] };
+  $("edit-tag-input").value = "";
   dialog.returnValue = "";
   $("edit-type").value = note.type;
   $("edit-text").value = note.text;
@@ -559,6 +626,11 @@ function openEditor(note) {
 function syncEditorFields() {
   const type = $("edit-type").value;
   $("edit-due-wrap").hidden = type !== "task";
+  $("edit-tags-wrap").hidden = type !== "idea";
+  $("edit-tags").replaceChildren(...editing.tags.map((t) => el("button", {
+    type: "button", class: "tag", textContent: `${t} ✕`, ariaLabel: `Remove tag ${t}`,
+    onclick: () => { editing.tags = editing.tags.filter((x) => x !== t); syncEditorFields(); },
+  })));
   $("edit-image-wrap").hidden = type !== "fact" && !editing.image;
   $("edit-image").hidden = !editing.image;
   $("edit-image-remove").hidden = !editing.image;
@@ -566,6 +638,23 @@ function syncEditorFields() {
   if (editing.image) $("edit-image").src = editing.image;
 }
 $("edit-type").addEventListener("change", syncEditorFields);
+
+function addEditorTag() {
+  const tag = cleanTag($("edit-tag-input").value);
+  $("edit-tag-input").value = "";
+  if (tag && !editing.tags.includes(tag)) editing.tags.push(tag);
+  syncEditorFields();
+}
+$("edit-tag-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault(); // Enter would otherwise submit (and close) the dialog
+    addEditorTag();
+  }
+});
+// Picking a suggestion from the dropdown adds it straight away.
+$("edit-tag-input").addEventListener("input", (e) => {
+  if (!(e instanceof InputEvent) || e.inputType === "insertReplacementText") addEditorTag();
+});
 
 $("edit-image-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -585,13 +674,14 @@ $("edit-delete").addEventListener("click", async () => {
 
 dialog.addEventListener("close", async () => {
   if (dialog.returnValue !== "save" || !editing) return;
-  const { note, image } = editing;
+  if ($("edit-tag-input").value.trim()) addEditorTag(); // typed but not yet added
+  const { note, image, tags } = editing;
   const type = $("edit-type").value;
   const text = $("edit-text").value.trim();
   const due = fromLocalInput($("edit-due").value);
   dialog.returnValue = "";
   if (!note.id) {
-    await addFromEditor(type, text, due, image);
+    await addFromEditor(type, text, due, image, tags);
     return;
   }
   const changes = { type, text, image, updatedAt: serverTimestamp() };
@@ -600,13 +690,14 @@ dialog.addEventListener("close", async () => {
     changes.done = note.type === "task" ? Boolean(note.done) : false;
   }
   if ((type === "thought" || type === "idea") && type !== note.type) changes.archived = false;
+  if (type === "idea") changes.tags = tags;
   if (text !== note.text || type !== note.type) changes.embedding = null; // recomputed by backfill
   await guard(updateDoc(doc(notesCol, note.id), changes), "save");
   backfillEmbeddings();
 });
 
 // Add a new note written in the editor dialog (opened by Add with an empty box).
-async function addFromEditor(type, text, due, image) {
+async function addFromEditor(type, text, due, image, tags) {
   if (!text && !(type === "fact" && image)) return;
   const note = { type, text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
   if (type === "task") {
@@ -621,6 +712,7 @@ async function addFromEditor(type, text, due, image) {
     Object.assign(note, { image, embedding: null });
   } else {
     note.archived = false;
+    if (type === "idea") note.tags = tags;
   }
   await guard(addDoc(notesCol, note), "add");
   if (type === "fact") backfillEmbeddings();

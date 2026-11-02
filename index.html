@@ -79,6 +79,7 @@
     <!-- 2.3. Ideas: like thoughts, but no review cycle -->
     <section id="view-ideas" class="view" data-title="Ideas" hidden>
       <div class="scroll">
+        <div id="idea-filter" class="row tag-filter" role="group" aria-label="Filter by tag" hidden></div>
         <ul id="idea-list" class="list"></ul>
         <details id="idea-archived-wrap" hidden>
           <summary>Archived (<span id="idea-archived-count">0</span>)</summary>
@@ -86,6 +87,9 @@
         </details>
       </div>
       <form class="dock" id="idea-form" autocomplete="off">
+        <div class="row">
+          <select id="idea-tag" aria-label="Tag for new ideas"></select>
+        </div>
         <div class="row">
           <textarea id="idea-text" rows="1" placeholder="New idea…" aria-label="Idea"></textarea>
           <button type="submit">Add</button>
@@ -155,6 +159,11 @@
       </label>
       <textarea id="edit-text" rows="5" aria-label="Text"></textarea>
       <label id="edit-due-wrap">Due <input id="edit-due" type="datetime-local"></label>
+      <div id="edit-tags-wrap" class="row">
+        <span id="edit-tags" class="row"></span>
+        <input id="edit-tag-input" list="tag-options" placeholder="🏷 Add tag" aria-label="Add tag" enterkeyhint="done">
+        <datalist id="tag-options"></datalist>
+      </div>
       <div id="edit-image-wrap">
         <img id="edit-image" alt="">
         <div class="row">

@@ -156,6 +156,22 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 #due-pick { margin-left: auto; }
 
 #fact-search { width: 100%; }
+
+/* Idea tags: small pills on list items and in the editor; filter chips above the list. */
+.tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+.tag {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 0.8rem;
+}
+.tag-filter { gap: 0.4rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: 0.5rem; }
+.tag-filter .chip { height: 1.9rem; }
+#idea-tag { padding: 0.3rem 0.5rem; font-size: 0.9rem; max-width: 100%; }
+#edit-tags-wrap { gap: 0.4rem; }
+#edit-tags { gap: 0.3rem; }
+#edit-tag-input { flex: 1; min-width: 8rem; }
 .hint { font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; }
 .hint:empty { display: none; }
 
