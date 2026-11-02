@@ -1,11 +1,8 @@
 #!/bin/sh
-# Stamps version.js with the commit time so the app can tell when it's running a stale copy.
+# Stamps version.js (VERSION + a hash of every app file) so the update light can tell when a
+# device runs a stale copy or a mix of old and new files. The hook itself is shared by all of
+# Alex's Pages sites: github.com/alexknight0/pages-common, cloned at ~/projects/pages-common.
 # Install once per clone:  ln -sf ../../tools/pre-commit .git/hooks/pre-commit
-cd "$(git rev-parse --show-toplevel)" || exit 1
-v=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-cat > version.js <<EOF
-// Set automatically by tools/pre-commit on every commit. app.js compares this (the copy
-// that's running) with the live file on GitHub Pages to show whether an update is available.
-export const VERSION = "$v";
-EOF
-git add version.js
+hook="$HOME/projects/pages-common/pre-commit"
+[ -x "$hook" ] || { echo "pre-commit: clone git@github.com:alexknight0/pages-common.git to ~/projects/pages-common" >&2; exit 1; }
+exec "$hook"
