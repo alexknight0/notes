@@ -296,3 +296,15 @@ dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 .home-link:hover, .home-link:focus-visible { opacity: 1; }
 @media (pointer: coarse) { .home-link { padding: 9px; margin: -5px; } }
 .home-link svg { width: 20px; height: 20px; display: block; }
+
+/* Loading screen (#boot), shown until the app knows whether you're signed in. */
+.boot { max-width: 320px; margin: 25vh auto 0; padding: 0 16px; text-align: center; color: var(--muted); }
+.boot p { margin: 0 0 14px; }
+.boot-spin {
+  display: inline-block; width: 0.9em; height: 0.9em; margin-right: 0.5em; vertical-align: -0.12em;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+  animation: boot-spin 0.8s linear infinite;
+}
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+.boot-slow { visibility: hidden; animation: boot-slow 0s 10s forwards; }
+@keyframes boot-slow { to { visibility: visible; } }

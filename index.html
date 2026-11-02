@@ -26,6 +26,13 @@
     <p id="status" role="status" aria-live="polite"></p>
   </header>
 
+  <!-- Shown until the app knows whether you're signed in, so a slow start (or Firebase never
+       loading) isn't a blank page. The "taking a while" line appears after 10 s by CSS alone. -->
+  <section id="boot" class="boot" role="status" aria-live="polite">
+    <p><span class="boot-spin" aria-hidden="true"></span><span id="boot-text">Checking sign-in…</span></p>
+    <p class="boot-slow">This is taking a while. <button type="button" onclick="location.reload()">Reload</button></p>
+  </section>
+
   <p id="signed-out-msg" class="empty" hidden>Sign in to see your notes.</p>
 
   <!-- Each view = a scrolling area + an input dock. On phones the dock sits at the

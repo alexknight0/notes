@@ -644,6 +644,7 @@ async function migrateOldNote(user) {
 }
 
 onAuthStateChanged(auth, (user) => {
+  $("boot").hidden = true;
   unsubs.forEach((u) => u());
   unsubs = [];
   notes = [];
