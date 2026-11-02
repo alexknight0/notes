@@ -121,7 +121,16 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
   flex: 1;
   width: auto;
   margin: 0.6rem var(--pad) var(--pad);
+  padding-right: 4.5rem; /* room for the Clear button */
   resize: none;
+}
+/* Clear button sits in the scratch pad's top-right corner. */
+#view-scratch { position: relative; }
+#scratch-clear {
+  position: absolute;
+  top: 1rem;
+  right: calc(var(--pad) + 0.4rem);
+  background: Canvas;
 }
 
 .row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }

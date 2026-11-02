@@ -155,7 +155,19 @@ async function saveScratch() {
   setStatus("Saved");
 }
 
+const scratchClear = $("scratch-clear");
+function updateScratchClear() { scratchClear.hidden = !scratch.value; }
+
+scratchClear.addEventListener("click", async () => {
+  if (!confirm("Clear the scratch pad?")) return;
+  scratch.value = "";
+  updateScratchClear();
+  await saveScratch();
+  scratch.focus();
+});
+
 scratch.addEventListener("input", () => {
+  updateScratchClear();
   setStatus("Editing…");
   clearTimeout(scratchTimer);
   scratchTimer = setTimeout(saveScratch, SAVE_DELAY_MS);
@@ -545,6 +557,7 @@ onAuthStateChanged(auth, (user) => {
   if (!user) {
     userRef = notesCol = null;
     scratch.value = "";
+    updateScratchClear();
     setStatus("");
     return;
   }
@@ -558,6 +571,7 @@ onAuthStateChanged(auth, (user) => {
     userData = snap.data({ serverTimestamps: "estimate" }) ?? {};
     // Don't clobber what the user is typing; local pending writes are our own.
     if (!scratchTimer && !snap.metadata.hasPendingWrites) scratch.value = userData.scratch ?? "";
+    updateScratchClear();
     renderThoughts();
     setStatus(snap.metadata.fromCache ? "Offline — changes will sync later" : "Saved");
     if (!migrated && !snap.metadata.fromCache) {
