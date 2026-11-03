@@ -728,6 +728,24 @@ async function addFromEditor(type, text, due, image, tags) {
 
 // ---------- auth & live data ----------
 
+// Sync status from both listeners' metadata:
+//   fromCache         = not (yet) in touch with the server
+//   hasPendingWrites  = local edits the server hasn't confirmed
+let syncState = {}; // listener name -> metadata
+let lastSyncText = "";
+function updateSync(name, { fromCache, hasPendingWrites }) {
+  syncState[name] = { fromCache, hasPendingWrites };
+  const all = Object.values(syncState);
+  const offline = all.some((m) => m.fromCache);
+  const pending = all.some((m) => m.hasPendingWrites);
+  const text = offline
+    ? (pending ? "Offline — changes will sync later" : "Offline")
+    : pending ? "Not synced yet" : "Saved";
+  // Only on a change, so "Editing…" and error messages aren't overwritten by repeat events.
+  if (text !== lastSyncText) setStatus(text);
+  lastSyncText = text;
+}
+
 // Tasks were called "urgent" notes until 2026-11-03; rename any still stored that way.
 function migrateUrgentToTask(docs) {
   for (const d of docs) {
@@ -770,21 +788,26 @@ onAuthStateChanged(auth, (user) => {
   notesCol = collection(userRef, "notes");
   setStatus("Loading…");
   let migrated = false;
+  syncState = {};
+  lastSyncText = "";
 
-  unsubs.push(onSnapshot(userRef, (snap) => {
+  // includeMetadataChanges: also hear when data that came from the device cache is
+  // confirmed by the server, or when a pending write is acknowledged. Without it Firestore
+  // stays quiet if nothing changed, and the status stuck on "Offline" after reconnecting.
+  unsubs.push(onSnapshot(userRef, { includeMetadataChanges: true }, (snap) => {
     userData = snap.data({ serverTimestamps: "estimate" }) ?? {};
     // Don't clobber what the user is typing; local pending writes are our own.
     if (!scratchTimer && !snap.metadata.hasPendingWrites) scratch.value = userData.scratch ?? "";
     updateScratchClear();
     renderThoughts();
-    setStatus(snap.metadata.fromCache ? "Offline — changes will sync later" : "Saved");
+    updateSync("user", snap.metadata);
     if (!migrated && !snap.metadata.fromCache) {
       migrated = true;
       migrateOldNote(user);
     }
   }, (err) => setStatus(`Couldn't load: ${err.message}`, true)));
 
-  unsubs.push(onSnapshot(notesCol, (snap) => {
+  unsubs.push(onSnapshot(notesCol, { includeMetadataChanges: true }, (snap) => {
     notes = snap.docs.map((d) => {
       const n = { id: d.id, ...d.data({ serverTimestamps: "estimate" }) };
       if (n.type === "urgent") n.type = "task";
@@ -792,6 +815,7 @@ onAuthStateChanged(auth, (user) => {
     });
     if (!snap.metadata.fromCache) migrateUrgentToTask(snap.docs);
     renderAll();
+    updateSync("notes", snap.metadata);
     backfillEmbeddings();
   }, (err) => setStatus(`Couldn't load notes: ${err.message}`, true)));
 });
