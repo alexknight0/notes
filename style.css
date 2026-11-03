@@ -84,12 +84,15 @@ h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
   resize: none;
 }
 
+.wide-only { display: none; } /* text shown only on wide screens with a mouse */
+
 /* Wide screens with a mouse: input at the top, like a normal page. */
 @media (min-width: 700px) and (pointer: fine) {
   .dock { order: -1; border-top: none; padding-top: var(--pad); }
-  /* Room to write, like the edit dialog's 5-line box; still grows with the text. */
-  .dock textarea { min-height: 8.7rem; max-height: 50vh; resize: vertical; }
-  .dock .row:has(> textarea) { align-items: flex-start; }
+  /* No inline text box: Add opens the edit dialog, which has a big box to write in.
+     The due chips and tag dropdown stay; they pre-fill the dialog. */
+  .dock textarea, .dock .file-btn { display: none; }
+  .wide-only { display: inline; }
 }
 
 button, .file-btn {
@@ -286,6 +289,8 @@ body.keyboard #tabs { display: none; }
 
 dialog {
   width: min(36rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  box-sizing: border-box;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 1rem;
@@ -294,6 +299,12 @@ dialog {
 }
 dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 #edit-form { display: flex; flex-direction: column; gap: 0.7rem; }
+/* Big writing box (Alex asked 2026-11-03), bigger still on desktop. */
+#edit-text { min-height: 13rem; }
+@media (min-width: 700px) and (pointer: fine) {
+  dialog { width: min(48rem, calc(100vw - 4rem)); }
+  #edit-text { min-height: 50vh; }
+}
 #edit-form > label { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); }
 #edit-image { max-width: 100%; max-height: 50vh; border-radius: 6px; display: block; margin-bottom: 0.5rem; }
 
