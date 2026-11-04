@@ -90,8 +90,8 @@ h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
 @media (min-width: 700px) and (pointer: fine) {
   .dock { order: -1; border-top: none; padding-top: var(--pad); }
   /* No inline text box: Add opens the edit dialog, which has a big box to write in.
-     The due chips and tag dropdown stay; they pre-fill the dialog. */
-  .dock textarea, .dock .file-btn { display: none; }
+     The due chips and tag dropdown are hidden too; due date and tags are set in the dialog. */
+  .dock textarea, .dock .file-btn, .dock .dock-options { display: none; }
   .wide-only { display: inline; }
 }
 

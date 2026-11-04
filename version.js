@@ -1,4 +1,4 @@
 // Set automatically by the pre-commit hook (~/projects/pages-common) on every commit.
 // update.js compares these with the live file on GitHub Pages to show whether an update is available.
-export const VERSION = "2026-11-03T09:55:12Z";
-export const VERSION_FILES = {"app.js": "b0ca1364e4d6e2f0b8fe5b2314366e20e414757fa1980ae4cda2fef272a61bb5", "index.html": "32355716ced6fe7b7ac185c320beda4b544f179c6079b5b72c440fbf40a501c1", "manifest.webmanifest": "8b053d4217c213e384dfe73ad21220c75bf9e0df98dcfe50fbd2fc32345f1a01", "search.js": "2dc9a5d2907db4e260b1c92f25c5cacc4f87a1d2f812c0070d896cb2ea7ee7bc", "style.css": "c328fb2450545fb97b81ab419715e78eec56b18f105872d8d2c547be0d4971cb"};
+export const VERSION = "2026-11-04T05:04:28Z";
+export const VERSION_FILES = {"app.js": "b7f15bb444b6d9737aa83c27df7568a80bc8945248a4d9f941e3a4fb936fa4bb", "index.html": "37c6eb46aee6acf0b16c2acd77165a1aa94b1420d0d07e62c9a484e86515cd1a", "manifest.webmanifest": "8b053d4217c213e384dfe73ad21220c75bf9e0df98dcfe50fbd2fc32345f1a01", "search.js": "2dc9a5d2907db4e260b1c92f25c5cacc4f87a1d2f812c0070d896cb2ea7ee7bc", "style.css": "4322b2afbed81347e3545ca9fd20451bcea59d82c308757b615a0b3375a231a9"};

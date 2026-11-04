@@ -627,9 +627,44 @@ function openEditor(note) {
   $("edit-delete").hidden = !note.id;
   $("edit-save").textContent = note.id ? "Save" : "Add";
   syncEditorFields();
+  editing.start = editorState();
   dialog.showModal();
   if (!note.id) $("edit-text").focus();
 }
+
+// Everything the user can change in the editor, to tell whether there are unsaved changes.
+function editorState() {
+  return JSON.stringify([
+    $("edit-type").value, $("edit-text").value, $("edit-due").value,
+    editing.image, editing.tags, $("edit-tag-input").value.trim(),
+  ]);
+}
+const editorChanged = () => editing && editorState() !== editing.start;
+
+// Escape asks before throwing away changes. Handled on keydown so the dialog's own
+// cancel never fires; the cancel listener covers Android's back gesture.
+function cancelEditor() {
+  if (!editorChanged() || confirm("Discard your changes?")) dialog.close("cancel");
+}
+dialog.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing) return;
+  e.preventDefault();
+  cancelEditor();
+});
+dialog.addEventListener("cancel", (e) => {
+  e.preventDefault();
+  cancelEditor();
+});
+
+// Tab in the text box indents with 4 spaces instead of moving to the next field.
+$("edit-text").addEventListener("keydown", (e) => {
+  if (e.key !== "Tab" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) return;
+  e.preventDefault();
+  // execCommand keeps the browser's undo history; setRangeText is the fallback.
+  if (!document.execCommand("insertText", false, "    ")) {
+    e.target.setRangeText("    ", e.target.selectionStart, e.target.selectionEnd, "end");
+  }
+});
 
 function syncEditorFields() {
   const type = $("edit-type").value;
