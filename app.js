@@ -796,6 +796,13 @@ async function migrateOldNote(user) {
   if (text) await setDoc(userRef, { scratch: text, scratchUpdatedAt: serverTimestamp() }, { merge: true });
 }
 
+// Who may use Notes is decided by the Firestore rules (Alex, plus config/access.emails, edited
+// on Home's Access page), so an account that isn't allowed finds out when loading is refused.
+function loadError(user, err, what) {
+  if (err.code === "permission-denied") return `${user.email} doesn't have access to Notes. Sign out and use an account that's been given access.`;
+  return `Couldn't ${what}: ${err.message}`;
+}
+
 onAuthStateChanged(auth, (user) => {
   $("boot").hidden = true;
   unsubs.forEach((u) => u());
@@ -840,7 +847,7 @@ onAuthStateChanged(auth, (user) => {
       migrated = true;
       migrateOldNote(user);
     }
-  }, (err) => setStatus(`Couldn't load: ${err.message}`, true)));
+  }, (err) => setStatus(loadError(user, err, "load"), true)));
 
   unsubs.push(onSnapshot(notesCol, { includeMetadataChanges: true }, (snap) => {
     notes = snap.docs.map((d) => {
@@ -852,7 +859,7 @@ onAuthStateChanged(auth, (user) => {
     renderAll();
     updateSync("notes", snap.metadata);
     backfillEmbeddings();
-  }, (err) => setStatus(`Couldn't load notes: ${err.message}`, true)));
+  }, (err) => setStatus(loadError(user, err, "load notes"), true)));
 });
 
 $("signin").addEventListener("click", async () => {

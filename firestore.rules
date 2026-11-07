@@ -1,12 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Only Alex's Google account may use the app at all.
+    // Alex (the admin) always; anyone else only if their email (lower-case) is in
+    // config/access.emails, which only Alex can read or edit (the Access page on /home/).
+    // Everyone only ever sees their own notes.
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function isAdmin() {
+      return signedIn() && request.auth.token.email.lower() == 'octopus0246@gmail.com';
+    }
+    function approved() {
+      return isAdmin() || (signedIn()
+        && exists(/databases/$(database)/documents/config/access)
+        && request.auth.token.email.lower() in get(/databases/$(database)/documents/config/access).data.emails);
+    }
     function isOwner(uid) {
-      return request.auth != null
-        && request.auth.uid == uid
-        && request.auth.token.email == 'octopus0246@gmail.com'
-        && request.auth.token.email_verified == true;
+      return approved() && request.auth.uid == uid;
+    }
+
+    match /config/access {
+      allow read, write: if isAdmin();
     }
 
     // users/{uid} (scratch pad, settings) and everything under it (notes).
