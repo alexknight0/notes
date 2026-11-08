@@ -230,6 +230,28 @@ scratch.addEventListener("input", () => {
   scratchTimer = setTimeout(saveScratch, SAVE_DELAY_MS);
 });
 
+// Pinch-zoom panning on Android. Chrome's "swipe to move cursor" turns any sideways-first
+// swipe that starts on an editable text box into caret movement (or nothing, if the box isn't
+// focused), so a zoomed-in page couldn't be panned sideways: the pad covers nearly all of it.
+// Read-only boxes are exempt, so while zoomed and not typing the pad is read-only, for the
+// whole of every touch (Chrome decides how a touch scrolls when it starts). A tap (click)
+// then makes it editable and re-focuses it, which opens the keyboard with the caret where
+// the tap landed.
+const zoomed = () => (window.visualViewport?.scale ?? 1) > 1.01;
+function updateScratchLock() {
+  scratch.readOnly = zoomed() && document.activeElement !== scratch;
+}
+scratch.addEventListener("click", () => {
+  if (!scratch.readOnly) return;
+  const { selectionStart, selectionEnd } = scratch;
+  scratch.readOnly = false;
+  scratch.blur();
+  scratch.focus({ preventScroll: true }); // the keyboard only opens for a focus while editable
+  scratch.setSelectionRange(selectionStart, selectionEnd);
+});
+scratch.addEventListener("blur", () => setTimeout(updateScratchLock, 0));
+window.visualViewport?.addEventListener("resize", updateScratchLock);
+
 // ---------- rendering ----------
 
 function noteItem(note, { leading, actions = [], meta, extraClass = "", onTag } = {}) {
@@ -1261,7 +1283,13 @@ function updateKeyboard() {
   }
   fullHeight = Math.max(fullHeight, window.innerHeight);
   const typing = document.activeElement?.matches("input, textarea");
-  document.body.classList.toggle("keyboard", Boolean(typing) && window.innerHeight < fullHeight * 0.8);
+  const keyboard = Boolean(typing) && window.innerHeight < fullHeight * 0.8;
+  // Keyboard closed (e.g. with Android's back gesture) while zoomed in on the scratch pad:
+  // let go of the pad, so it turns read-only and sideways swipes pan instead of moving the caret.
+  if (!keyboard && document.body.classList.contains("keyboard") && document.activeElement === scratch && zoomed()) {
+    scratch.blur();
+  }
+  document.body.classList.toggle("keyboard", keyboard);
 }
 window.addEventListener("resize", updateKeyboard);
 document.addEventListener("focusout", () => setTimeout(updateKeyboard, 0));
