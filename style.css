@@ -317,6 +317,11 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; overflow-x: hidden; 
 .list-head { display: flex; align-items: center; justify-content: space-between; }
 .list-head h2 { margin-bottom: 0.3rem; }
 
+/* Reminders line at the top of Tasks: quiet text with its buttons on the right. */
+.reminders { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0 0.6rem; font-size: 0.85rem; color: var(--muted); }
+.reminders span { flex: 1; }
+.reminders[hidden] { display: none; }
+
 /* Ideas / Thoughts / Facts / Project switcher at the top of the Library tab. */
 .segmented {
   flex: none;

@@ -51,6 +51,12 @@
     <!-- 1. Tasks / deadlines -->
     <section id="view-tasks" class="view" data-title="Tasks" hidden>
       <div class="scroll">
+        <!-- Push reminders when a task comes due (sent by tools/send_reminders.py via GitHub Actions). -->
+        <div id="reminders" class="reminders" hidden>
+          <span id="reminders-text"></span>
+          <button id="reminders-test" type="button" class="small" hidden>Test</button>
+          <button id="reminders-toggle" type="button" class="small" hidden></button>
+        </div>
         <ul id="task-list" class="list"></ul>
         <details id="task-done-wrap" hidden>
           <summary>Done (<span id="task-done-count">0</span>)</summary>

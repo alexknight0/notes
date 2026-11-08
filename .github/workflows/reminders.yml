@@ -1,0 +1,44 @@
+# Sends push notifications for tasks that have come due (tools/send_reminders.py).
+# Signs in to Google Cloud as reminders@notes-e2b6c3 through Workload Identity Federation
+# (pool "github", provider "notes-repo", limited to this repo), so no key is stored anywhere.
+# Note: GitHub often starts scheduled runs 5-20 min late, and disables schedules in a repo
+# with no commits for 60 days (re-enable under Actions).
+name: Task reminders
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only list what would be sent"
+        type: boolean
+        default: false
+
+concurrency:
+  group: reminders
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/901046426288/locations/global/workloadIdentityPools/github/providers/notes-repo
+          service_account: reminders@notes-e2b6c3.iam.gserviceaccount.com
+          token_format: access_token
+          create_credentials_file: false
+      - run: python3 tools/send_reminders.py
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
