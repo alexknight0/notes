@@ -173,6 +173,9 @@ function route() {
     a.classList.toggle("active", a.dataset.view === (inLibrary ? "library" : view));
   }
   $("view-title").textContent = $(`view-${view}`).dataset.title;
+  const add = ADD_FORMS[view];
+  $("header-add").hidden = !add;
+  if (add) $("header-add").querySelector("span").textContent = add.word;
   if (view === "facts") startSemanticSearch();
   if (view === "project") renderBoard(); // block heights can only be measured while visible
 }
@@ -181,6 +184,20 @@ function route() {
   if (LIBRARY.includes(saved)) $("library-tab").href = `#${saved}`;
 }
 window.addEventListener("hashchange", route);
+
+// Desktop: the title-row Add button stands in for the view's dock (whose text box is hidden
+// there), so submitting the empty dock form opens the editor as usual.
+const ADD_FORMS = {
+  tasks: { form: "task-form", word: "task" },
+  ideas: { form: "idea-form", word: "idea" },
+  thoughts: { form: "thought-form", word: "thought" },
+  facts: { form: "fact-form", word: "fact" },
+  project: { form: "block-form", word: "block" },
+};
+$("header-add").addEventListener("click", () => {
+  const add = ADD_FORMS[currentView()];
+  if (add) $(add.form).requestSubmit();
+});
 
 // ---------- scratch pad ----------
 

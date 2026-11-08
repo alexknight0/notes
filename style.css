@@ -117,7 +117,12 @@ h2 {
      The due chips and tag dropdown are hidden too; due date and tags are set in the dialog. */
   .dock textarea, .dock .file-btn, .dock .dock-options { display: none; }
   .wide-only { display: inline; }
+  /* The Add button lives in the title row (#header-add), so docks with nothing else in them
+     go; the facts dock keeps just its search box. */
+  #task-form, #idea-form, #thought-form, #block-form, #fact-form .row { display: none; }
 }
+#header-add { display: none; margin-left: 0.4rem; padding: 0.35rem 0.85rem; font-size: 0.9rem; }
+@media (min-width: 700px) and (pointer: fine) { #header-add { display: inline-block; } }
 
 /* Buttons: quiet filled by default, accent for the main action of a form. */
 button, .file-btn {
