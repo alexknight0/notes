@@ -1,5 +1,5 @@
 // Service worker: only shows task reminders (no offline caching; Firestore's own cache does that).
-// tools/send_reminders.py sends data-only FCM messages: {data: {title, body, tag, url}}.
+// worker/src/index.js sends data-only FCM messages: {data: {title, body, tag, url}}.
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));

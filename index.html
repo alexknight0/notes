@@ -51,7 +51,7 @@
     <!-- 1. Tasks / deadlines -->
     <section id="view-tasks" class="view" data-title="Tasks" hidden>
       <div class="scroll">
-        <!-- Push reminders when a task comes due (sent by tools/send_reminders.py via GitHub Actions). -->
+        <!-- Push reminders when a task comes due (sent every minute by the Cloudflare Worker in worker/). -->
         <div id="reminders" class="reminders" hidden>
           <span id="reminders-text"></span>
           <button id="reminders-test" type="button" class="small" hidden>Test</button>

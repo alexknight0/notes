@@ -5,7 +5,7 @@
 //                             due?, done?          (task; stored as "urgent" before 2026-11-03,
 //                                                   migrated on load by migrateUrgentToTask)
 //                             remindedDue?         (task; = due once its reminder was sent,
-//                                                   written by tools/send_reminders.py)
+//                                                   written by worker/src/index.js)
 //                             image?, embedding?   (fact; image is a JPEG data URL)
 //                             archived?            (idea, thought)
 //                             tags?                (idea; array of strings) }
@@ -1191,11 +1191,12 @@ function loadError(user, err, what) {
 }
 
 // ---------- task reminders (push notifications) ----------
-// This device's FCM token is stored in users/{uid}/devices/{deviceId}. A GitHub Actions cron
-// (tools/send_reminders.py) reads due tasks every few minutes and sends a push through FCM;
+// This device's FCM token is stored in users/{uid}/devices/{deviceId}. A Cloudflare Worker cron
+// (worker/src/index.js) reads due tasks every minute and sends a push through FCM;
 // sw.js shows it, even with the app closed. Permission is only asked from the Turn on button.
 const DEVICE_KEY = "notes.deviceId"; // localStorage is shared by all of Alex's sites
 const PUSH_SIG_KEY = "notes.pushSignature"; // token|timeZone last saved, to skip needless writes
+const REMINDERS_ON_KEY = "notes.remindersOn"; // uid that turned reminders on here (until Turn off / sign out)
 const MESSAGING_URL = "https://www.gstatic.com/firebasejs/13.0.0/firebase-messaging.js";
 let remindersUser = null;
 let remindersBusy = false;
@@ -1225,9 +1226,12 @@ function showReminders(text, { toggle = null, test = false } = {}) {
 }
 
 // Gets this device's push token and saves it (tokens can change, so this runs on every load).
-async function saveDeviceToken(user) {
+// fresh: drop the old token first (the server found it dead), else Firebase hands back its
+// cached copy of it.
+async function saveDeviceToken(user, { fresh = false } = {}) {
   const reg = await navigator.serviceWorker.register("sw.js");
-  const { getMessaging, getToken } = await import(MESSAGING_URL);
+  const { getMessaging, getToken, deleteToken } = await import(MESSAGING_URL);
+  if (fresh) await deleteToken(getMessaging(app)).catch((err) => console.warn("delete token", err));
   const token = await getToken(getMessaging(app), { serviceWorkerRegistration: reg });
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const sig = `${user.uid}|${token}|${timeZone}`;
@@ -1235,6 +1239,7 @@ async function saveDeviceToken(user) {
   if (localStorage.getItem(PUSH_SIG_KEY) === sig && (await getDoc(ref).catch(() => null))?.exists()) return;
   await setDoc(ref, { token, timeZone, userAgent: navigator.userAgent, updatedAt: serverTimestamp() });
   localStorage.setItem(PUSH_SIG_KEY, sig);
+  localStorage.setItem(REMINDERS_ON_KEY, user.uid);
 }
 
 async function initReminders(user) {
@@ -1245,14 +1250,21 @@ async function initReminders(user) {
     showReminders("Notifications are blocked for this site. Allow them in the browser's site settings to get task reminders.");
     return;
   }
-  const on = Notification.permission === "granted" && (await getDoc(deviceRef(user)).catch(() => null))?.exists();
+  const granted = Notification.permission === "granted";
+  const exists = granted && (await getDoc(deviceRef(user)).catch(() => null))?.exists();
   if (remindersUser !== user) return;
-  if (!on) {
+  // Turned on here but the device doc is gone: the reminder server deletes it when FCM says the
+  // token is dead (seen on Android, 2026-11-08). Register again with a new token.
+  const heal = granted && !exists && localStorage.getItem(REMINDERS_ON_KEY) === user.uid;
+  if (!exists && !heal) {
     showReminders("Get a notification when a task is due.", { toggle: "🔔 Turn on" });
     return;
   }
   showReminders("🔔 Reminders on (this device)", { toggle: "Turn off", test: true });
-  saveDeviceToken(user).catch((err) => console.warn("push token", err));
+  saveDeviceToken(user, { fresh: heal }).catch((err) => {
+    console.warn("push token", err);
+    if (heal) setStatus(`Couldn't renew reminders on this device: ${err.message}`, true);
+  });
 }
 
 async function turnRemindersOn(user) {
@@ -1274,6 +1286,7 @@ async function turnRemindersOff(user) {
   try {
     const { getMessaging, deleteToken } = await import(MESSAGING_URL);
     await deleteToken(getMessaging(app)).catch((err) => console.warn("delete token", err));
+    localStorage.removeItem(REMINDERS_ON_KEY);
     await deleteDoc(deviceRef(user));
     localStorage.removeItem(PUSH_SIG_KEY);
   } catch (err) {
@@ -1396,6 +1409,7 @@ $("signout").addEventListener("click", async () => {
     await Promise.race([removed, new Promise((r) => setTimeout(r, 3000))]); // offline: don't hang
   }
   localStorage.removeItem(PUSH_SIG_KEY);
+  localStorage.removeItem(REMINDERS_ON_KEY);
   signOut(auth);
 });
 

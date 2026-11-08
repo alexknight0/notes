@@ -1,0 +1,15 @@
+# Notes task reminders Worker (src/index.js): sends push notifications for due tasks every minute.
+# Deploy: npx wrangler deploy (from this folder). Logs: npx wrangler tail notes-reminders
+# Secret: SA_KEY = the reminders@notes-e2b6c3 service-account JSON key
+#   (gcloud iam service-accounts keys create /dev/stdout --iam-account reminders@notes-e2b6c3.iam.gserviceaccount.com | npx wrangler secret put SA_KEY)
+name = "notes-reminders"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = false # no public URL; it only runs on the schedule
+preview_urls = false
+
+[triggers]
+crons = ["* * * * *"]
+
+[observability]
+enabled = true
