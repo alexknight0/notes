@@ -26,10 +26,12 @@
 /* Full-height column: header, the current view (scroll area + input dock), tab bar.
    100dvh follows the on-screen keyboard (see interactive-widget in index.html). */
 html, body { height: 100%; }
-/* No overflow: hidden here, although the page itself never scrolls (the lists scroll inside
-   it). On Android Chrome, overflow: hidden on the page stopped a straight sideways swipe from
-   panning a pinch-zoomed page (Alex, 2026-11-08); nothing is taller or wider than the screen
-   anyway. overscroll-behavior-x: none keeps sideways swipes away from swipe-to-go-back. */
+/* overflow: hidden on body: the page itself never scrolls (the lists scroll inside it), so the
+   tab bar always stays on screen. Without it (2026-11-08) Android Chrome let the page scroll,
+   as html's 100% follows the tall viewport (address bar hidden) while body is 100dvh, and the
+   tab bar could end up below the screen. Pinch-zoom panning isn't affected by this; the
+   sideways-pan problem was Chrome's swipe-to-move-cursor (see the scratch pad in app.js).
+   overscroll-behavior-x: none keeps sideways swipes away from swipe-to-go-back. */
 html { background: var(--bg); overscroll-behavior-x: none; }
 body {
   box-sizing: border-box;
@@ -38,6 +40,7 @@ body {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
 }
