@@ -253,7 +253,9 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 .list li:not(.empty):hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .list li .body { flex: 1; min-width: 0; cursor: pointer; }
 .list li .text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
-.list li .meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
+.list li .meta { font-size: 0.78rem; color: var(--muted); }
+/* Bottom line of a card: date on the left, → Task / → Fact / Archive on the right. */
+.list li .foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-top: 0.3rem; min-height: 1.6rem; }
 /* Overdue: a red bar down the left edge. */
 .list li.overdue { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
 .list li.overdue::before {
@@ -267,8 +269,7 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 .list li.overdue .meta { color: var(--danger); font-weight: 600; }
 .list li.done { box-shadow: none; background: transparent; }
 .list li.done .text { text-decoration: line-through; color: var(--muted); }
-/* Move/archive buttons get their own row under the text, right-aligned. */
-.list li .actions { flex-basis: 100%; display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+.list li .actions { display: flex; gap: 0.15rem; flex-wrap: wrap; justify-content: flex-end; margin-right: -0.4rem; }
 .list li .actions button { background: transparent; color: var(--muted); padding: 0.22rem 0.55rem; }
 .list li .actions button:hover { background: var(--surface-2); color: var(--text); }
 .list .empty { border: none; background: none; box-shadow: none; color: var(--muted); padding: 0.4rem 0.1rem; }
@@ -363,9 +364,12 @@ details summary { cursor: pointer; color: var(--muted); margin-top: 1.1rem; font
 }
 /* While the keyboard is open (set by app.js), give its space to the list instead of the tabs. */
 body.keyboard #tabs { display: none; }
+/* Each tab fills its whole share of the bar, so the entire section is the tap/hover target. */
 #tabs a {
   position: relative;
   flex: 1;
+  align-self: stretch;
+  transition: background-color 0.15s, color 0.15s;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -387,6 +391,12 @@ body.keyboard #tabs { display: none; }
   opacity: 0.65;
   transition: background-color 0.2s, opacity 0.2s;
 }
+@media (hover: hover) { /* not on touch screens, where :hover sticks after a tap */
+  #tabs a:hover { background: var(--surface-2); color: var(--text); }
+  #tabs a:hover span { opacity: 0.9; }
+}
+#tabs a:active { background: color-mix(in srgb, var(--surface-2) 80%, currentColor 10%); }
+#tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #tabs a.active { color: var(--accent-ink); font-weight: 650; }
 #tabs a.active span { filter: none; opacity: 1; background: var(--accent-soft); }
 #tabs b {

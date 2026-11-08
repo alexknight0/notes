@@ -239,15 +239,20 @@ function noteItem(note, { leading, actions = [], meta, extraClass = "", onTag } 
       onclick: (e) => { e.stopPropagation(); onTag(t); },
     })))
     : null;
+  // The date and the action buttons share the bottom line of the card.
+  const foot = meta || actions.length
+    ? el("div", { class: "foot" },
+      el("div", { class: "meta", textContent: meta ?? "" }),
+      actions.length ? el("div", { class: "actions", onclick: (e) => e.stopPropagation() }, ...actions) : null)
+    : null;
   const body = el("div", { class: "body", onclick: () => openEditor(note) },
     el("div", { class: "text", textContent: note.text }),
     tags,
-    meta ? el("div", { class: "meta", textContent: meta }) : null);
+    foot);
   const thumb = note.image
     ? el("img", { class: "thumb", src: note.image, alt: "", onclick: () => openEditor(note) })
     : null;
-  return el("li", { class: extraClass }, leading, thumb, body,
-    actions.length ? el("div", { class: "actions" }, ...actions) : null);
+  return el("li", { class: extraClass }, leading, thumb, body);
 }
 
 function fillList(list, items, emptyText) {
