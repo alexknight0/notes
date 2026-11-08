@@ -6,7 +6,8 @@
        so the bottom input bar sits above the keyboard instead of behind it. -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Notes</title>
-  <meta name="theme-color" content="#1f6feb">
+  <meta name="theme-color" content="#f5f4f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="stylesheet" href="style.css">
@@ -74,6 +75,7 @@
       <a href="#ideas" data-view="ideas">💡 Ideas</a>
       <a href="#thoughts" data-view="thoughts">💭 Thoughts<b id="thought-subbadge" hidden></b></a>
       <a href="#facts" data-view="facts">📌 Facts</a>
+      <a href="#project" data-view="project">🧩 Project</a>
     </nav>
 
     <!-- 2.3. Ideas: like thoughts, but no review cycle -->
@@ -113,6 +115,20 @@
           <label class="file-btn icon-btn" title="Add photo" aria-label="Add photo">📷<input id="fact-image" type="file" accept="image/*" hidden></label>
           <textarea id="fact-text" rows="1" placeholder="New fact, e.g. My height: 178 cm" aria-label="Fact"></textarea>
           <button type="submit">Add<span class="wide-only"> fact</span></button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Project board: blocks of text dragged around on a grid (users/{uid}/blocks). -->
+    <section id="view-project" class="view" data-title="Project" hidden>
+      <div id="board-wrap" class="board-wrap">
+        <div id="board" class="board" role="group" aria-label="Project board"></div>
+        <p id="board-empty" class="board-empty" hidden>Add a block, then drag it anywhere on the grid.<br>Tap a block to edit it; drag its corner to resize.</p>
+      </div>
+      <form class="dock" id="block-form" autocomplete="off">
+        <div class="row">
+          <textarea id="block-text" rows="1" placeholder="New block…" aria-label="Block" enterkeyhint="done"></textarea>
+          <button type="submit">Add<span class="wide-only"> block</span></button>
         </div>
       </form>
     </section>
@@ -175,7 +191,20 @@
         <button id="edit-delete" type="button" class="danger">Delete</button>
         <span class="spacer"></span>
         <button value="cancel" formnovalidate>Cancel</button>
-        <button id="edit-save" value="save">Save</button>
+        <button id="edit-save" value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="block-edit">
+    <form method="dialog" id="block-edit-form">
+      <textarea id="block-edit-text" rows="4" aria-label="Block text" placeholder="Write something…"></textarea>
+      <div class="row swatches" role="radiogroup" aria-label="Colour" id="block-colors"></div>
+      <div class="row">
+        <button id="block-delete" type="button" class="danger">Delete</button>
+        <span class="spacer"></span>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button id="block-save" value="save" class="primary">Save</button>
       </div>
     </form>
   </dialog>

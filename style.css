@@ -1,12 +1,24 @@
 :root {
   color-scheme: light dark;
-  font-family: system-ui, sans-serif;
-  --accent: #1f6feb;
-  --danger: #d33;
-  --muted: color-mix(in srgb, currentColor 60%, transparent);
-  --line: color-mix(in srgb, currentColor 18%, transparent);
-  --card: color-mix(in srgb, currentColor 5%, transparent);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  /* Warm off-white paper in light mode, soft charcoal in dark mode. */
+  --bg: light-dark(#f5f4f0, #121214);
+  --surface: light-dark(#ffffff, #1c1c21);
+  --surface-2: light-dark(#ebe9e3, #26262d); /* inputs, segmented track, quiet buttons */
+  --text: light-dark(#1c1c1e, #ececf1);
+  --muted: light-dark(#6f6e76, #9b9ba6);
+  --line: light-dark(rgb(20 20 30 / 0.09), rgb(255 255 255 / 0.08));
+  --accent: light-dark(#3a63e0, #5b7cf6);
+  --accent-ink: light-dark(#2f55c9, #93aaff); /* accent-coloured text */
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --danger: light-dark(#d1343a, #ff6b6b);
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, transparent);
+  --shadow: light-dark(0 1px 2px rgb(30 30 40 / 0.06), 0 1px 2px rgb(0 0 0 / 0.4));
+  --shadow-lift: light-dark(0 10px 30px rgb(30 30 40 / 0.16), 0 10px 30px rgb(0 0 0 / 0.55));
+  --radius: 14px;
   --pad: 1rem;
+  --grid: 24px; /* project board cell; keep in step with GRID in app.js */
 }
 
 [hidden] { display: none !important; }
@@ -14,6 +26,7 @@
 /* Full-height column: header, the current view (scroll area + input dock), tab bar.
    100dvh follows the on-screen keyboard (see interactive-widget in index.html). */
 html, body { height: 100%; }
+html { background: var(--bg); }
 body {
   box-sizing: border-box;
   height: 100dvh;
@@ -22,9 +35,11 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
 }
 
-header { padding: var(--pad) var(--pad) 0; }
+header { padding: calc(var(--pad) * 0.9) var(--pad) 0; }
 .title-row {
   display: flex;
   align-items: center;
@@ -34,8 +49,15 @@ h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 520px) { #user-email { display: none; } }
 #signed-out-msg { padding: 0 var(--pad); }
 
-h1 { margin: 0; font-size: 1.5rem; }
-h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
+h1 { margin: 0; font-size: 1.6rem; font-weight: 750; letter-spacing: -0.025em; }
+h2 {
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 1.4rem 0 0.5rem;
+  color: var(--muted);
+}
 
 #account { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
 #user-email { color: var(--muted); font-size: 0.85rem; }
@@ -48,11 +70,12 @@ h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
   gap: 0.35rem;
   padding: 0.2rem 0.4rem;
   border: none;
+  background: none;
   font-size: 0.8rem;
 }
 .version i {
-  width: 0.6rem;
-  height: 0.6rem;
+  width: 0.55rem;
+  height: 0.55rem;
   border-radius: 50%;
   box-sizing: border-box;
   border: 2px solid var(--muted);
@@ -74,6 +97,7 @@ h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
   gap: 0.5rem;
   padding: 0.6rem var(--pad);
   border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 70%, var(--bg));
 }
 .dock .row { flex-wrap: nowrap; }
 .dock .row > input:not([type]), .dock .row > textarea { flex: 1; min-width: 0; }
@@ -88,55 +112,75 @@ h2 { font-size: 1rem; margin: 1.2rem 0 0.4rem; color: var(--muted); }
 
 /* Wide screens with a mouse: input at the top, like a normal page. */
 @media (min-width: 700px) and (pointer: fine) {
-  .dock { order: -1; border-top: none; padding-top: var(--pad); }
+  .dock { order: -1; border-top: none; padding-top: var(--pad); background: none; }
   /* No inline text box: Add opens the edit dialog, which has a big box to write in.
      The due chips and tag dropdown are hidden too; due date and tags are set in the dialog. */
   .dock textarea, .dock .file-btn, .dock .dock-options { display: none; }
   .wide-only { display: inline; }
 }
 
+/* Buttons: quiet filled by default, accent for the main action of a form. */
 button, .file-btn {
   font: inherit;
-  padding: 0.45rem 1rem;
-  border-radius: 6px;
-  border: 1px solid currentColor;
-  background: transparent;
+  font-weight: 550;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: var(--surface-2);
   color: inherit;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color 0.15s, transform 0.1s, box-shadow 0.15s;
 }
-button[type="submit"], #edit-save { background: var(--accent); border-color: var(--accent); color: white; }
-button.small { padding: 0.25rem 0.6rem; font-size: 0.85rem; }
-button.danger { color: var(--danger); }
-.icon-btn { padding: 0.45rem 0.6rem; }
+button:hover, .file-btn:hover { background: color-mix(in srgb, var(--surface-2) 80%, currentColor 8%); }
+button:active, .file-btn:active { transform: scale(0.97); }
+button[type="submit"], button.primary {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+button[type="submit"]:hover, button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
+button.small { padding: 0.28rem 0.65rem; font-size: 0.82rem; border-radius: 8px; }
+button.danger { color: var(--danger); background: var(--danger-soft); }
+.icon-btn { padding: 0.5rem 0.65rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 input, textarea, select {
   box-sizing: border-box;
   font: inherit;
   font-size: 1rem;
-  padding: 0.55rem 0.7rem;
-  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
   border: 1px solid var(--line);
-  background: transparent;
+  background: var(--surface);
   color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 textarea { width: 100%; line-height: 1.5; resize: vertical; }
+::placeholder { color: var(--muted); opacity: 0.8; }
 
-/* Scratch pad fills the whole view, down to the tab bar. */
+/* Scratch pad fills the whole view, down to the tab bar: a sheet of paper. */
 #scratch {
   flex: 1;
   width: auto;
   margin: 0.6rem var(--pad) var(--pad);
-  padding-right: 4.5rem; /* room for the Clear button */
+  padding: 1rem 4.5rem 1rem 1.1rem; /* room on the right for the Clear button */
+  line-height: 1.65;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   resize: none;
 }
 /* Clear button sits in the scratch pad's top-right corner. */
 #view-scratch { position: relative; }
 #scratch-clear {
   position: absolute;
-  top: 1rem;
-  right: calc(var(--pad) + 0.4rem);
-  background: Canvas;
+  top: 1.1rem;
+  right: calc(var(--pad) + 0.5rem);
 }
 
 .row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
@@ -153,10 +197,12 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
   gap: 0.3rem;
   box-sizing: border-box;
   height: 2.1rem;
-  padding: 0 0.75rem;
+  padding: 0 0.85rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-size: 0.9rem;
+  background: var(--surface);
+  font-size: 0.88rem;
+  font-weight: 500;
 }
 .chip.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 600; }
 #due-pick { margin-left: auto; }
@@ -164,95 +210,150 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; }
 #fact-search { width: 100%; }
 
 /* Idea tags: small pills on list items and in the editor; filter chips above the list. */
-.tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem; }
+.tags { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
 .tag {
-  padding: 0.1rem 0.55rem;
+  padding: 0.12rem 0.55rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  font-size: 0.8rem;
+  border: none;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
-.tag-filter { gap: 0.4rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: 0.5rem; }
+.tag:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.tag-filter { gap: 0.4rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-top: 0.7rem; }
 .tag-filter .chip { height: 1.9rem; }
-#idea-tag { padding: 0.3rem 0.5rem; font-size: 0.9rem; max-width: 100%; }
+#idea-tag { padding: 0.35rem 0.6rem; font-size: 0.88rem; max-width: 100%; border-radius: 999px; }
 #edit-tags-wrap { gap: 0.4rem; }
 #edit-tags { gap: 0.3rem; }
 #edit-tag-input { flex: 1; min-width: 8rem; }
 .hint { font-size: 0.8rem; color: var(--muted); margin: 0.3rem 0; }
 .hint:empty { display: none; }
 
-.list { list-style: none; padding: 0; margin: 0.5rem 0; display: flex; flex-direction: column; gap: 0.5rem; }
+/* Notes are white cards on the paper background. */
+.list { list-style: none; padding: 0; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.55rem; }
 .list li {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  gap: 0.6rem;
-  padding: 0.6rem 0.7rem;
+  gap: 0.4rem 0.75rem;
+  padding: 0.75rem 0.85rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--card);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.15s, border-color 0.15s;
 }
+.list li:not(.empty):hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
 .list li .body { flex: 1; min-width: 0; cursor: pointer; }
-.list li .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.list li .meta { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
-.list li.overdue { border-color: var(--danger); }
+.list li .text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.list li .meta { font-size: 0.78rem; color: var(--muted); margin-top: 0.3rem; }
+/* Overdue: a red bar down the left edge. */
+.list li.overdue { border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
+.list li.overdue::before {
+  content: "";
+  position: absolute;
+  left: -1px; top: 10px; bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--danger);
+}
 .list li.overdue .meta { color: var(--danger); font-weight: 600; }
+.list li.done { box-shadow: none; background: transparent; }
 .list li.done .text { text-decoration: line-through; color: var(--muted); }
-.list li .actions { display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
-.list li input[type="checkbox"] { width: 1.3rem; height: 1.3rem; margin-top: 0.1rem; accent-color: var(--accent); }
-.list .empty { border: none; background: none; color: var(--muted); padding: 0.3rem 0; }
+/* Move/archive buttons get their own row under the text, right-aligned. */
+.list li .actions { flex-basis: 100%; display: flex; gap: 0.3rem; flex-wrap: wrap; justify-content: flex-end; }
+.list li .actions button { background: transparent; color: var(--muted); padding: 0.22rem 0.55rem; }
+.list li .actions button:hover { background: var(--surface-2); color: var(--text); }
+.list .empty { border: none; background: none; box-shadow: none; color: var(--muted); padding: 0.4rem 0.1rem; }
 
-.thumb { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: 6px; }
+/* Round tick boxes for tasks. */
+.list li input[type="checkbox"] {
+  appearance: none;
+  flex: none;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: 0.05rem 0 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-content: center;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.list li input[type="checkbox"]::after {
+  content: "";
+  width: 0.35rem;
+  height: 0.65rem;
+  margin-top: -0.15rem;
+  border: solid white;
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform 0.15s;
+}
+.list li input[type="checkbox"]:hover { border-color: var(--accent); }
+.list li input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+.list li input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); }
+.list li input[type="checkbox"]:focus { box-shadow: none; }
+
+.thumb { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: 10px; }
 .list li .thumb { flex: none; cursor: pointer; }
 
 .list-head { display: flex; align-items: center; justify-content: space-between; }
+.list-head h2 { margin-bottom: 0.3rem; }
 
-/* Ideas / Thoughts / Facts switcher at the top of the Library tab. */
+/* Ideas / Thoughts / Facts / Project switcher at the top of the Library tab. */
 .segmented {
   flex: none;
   display: flex;
-  gap: 0.25rem;
-  margin: 0.5rem var(--pad) 0;
-  padding: 0.2rem;
-  border-radius: 8px;
-  background: var(--card);
-  border: 1px solid var(--line);
+  gap: 0.2rem;
+  margin: 0.6rem var(--pad) 0;
+  padding: 0.22rem;
+  border-radius: 12px;
+  background: var(--surface-2);
 }
 .segmented a {
   position: relative;
   flex: 1;
-  padding: 0.4rem 0.3rem;
-  border-radius: 6px;
+  padding: 0.42rem 0.2rem;
+  border-radius: 9px;
   text-align: center;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 550;
   color: var(--muted);
   text-decoration: none;
   white-space: nowrap;
+  transition: background-color 0.15s, color 0.15s;
 }
-.segmented a.active { background: Canvas; color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.15); }
+.segmented a.active { background: var(--surface); color: var(--text); font-weight: 650; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+@media (max-width: 400px) { .segmented a { font-size: 0.8rem; letter-spacing: -0.01em; } }
 .segmented b {
   display: inline-block;
-  margin-left: 0.3rem;
+  margin-left: 0.25rem;
   min-width: 1.1rem;
   padding: 0 0.3rem;
   box-sizing: border-box;
   border-radius: 1rem;
   background: var(--danger);
   color: white;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   line-height: 1.1rem;
 }
-details summary { cursor: pointer; color: var(--muted); margin-top: 1rem; }
+details summary { cursor: pointer; color: var(--muted); margin-top: 1.1rem; font-size: 0.9rem; font-weight: 550; }
 
-#status { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; margin: 0.3rem 0 0; }
+#status { font-size: 0.78rem; color: var(--muted); min-height: 1.2em; margin: 0.2rem 0 0; }
 #status.error { color: var(--danger); }
 .empty { color: var(--muted); }
 
 #tabs {
   flex: none;
   display: flex;
-  height: 3.6rem;
+  height: 3.8rem;
   padding-bottom: env(safe-area-inset-bottom);
-  background: Canvas;
+  background: var(--surface);
   border-top: 1px solid var(--line);
 }
 /* While the keyboard is open (set by app.js), give its space to the list instead of the tabs. */
@@ -264,27 +365,39 @@ body.keyboard #tabs { display: none; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.1rem;
-  font-size: 0.75rem;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 550;
   color: var(--muted);
   text-decoration: none;
 }
-#tabs a span { font-size: 1.25rem; filter: grayscale(1); opacity: 0.7; }
-#tabs a.active { color: var(--accent); font-weight: 600; }
-#tabs a.active span { filter: none; opacity: 1; }
+/* The active tab's icon sits in a soft accent pill. */
+#tabs a span {
+  font-size: 1.2rem;
+  line-height: 1.7rem;
+  width: 3.6rem;
+  text-align: center;
+  border-radius: 999px;
+  filter: grayscale(1);
+  opacity: 0.65;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+#tabs a.active { color: var(--accent-ink); font-weight: 650; }
+#tabs a.active span { filter: none; opacity: 1; background: var(--accent-soft); }
 #tabs b {
   position: absolute;
-  top: 0.3rem;
-  left: calc(50% + 0.5rem);
+  top: 0.35rem;
+  left: calc(50% + 0.7rem);
   min-width: 1.1rem;
   padding: 0 0.3rem;
   box-sizing: border-box;
   border-radius: 1rem;
   background: var(--danger);
   color: white;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   line-height: 1.1rem;
   text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 dialog {
@@ -292,21 +405,136 @@ dialog {
   max-height: calc(100dvh - 2rem);
   box-sizing: border-box;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1rem;
-  background: Canvas;
-  color: CanvasText;
+  border-radius: 18px;
+  padding: 1.1rem;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lift);
 }
-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
-#edit-form { display: flex; flex-direction: column; gap: 0.7rem; }
+dialog[open] { animation: dialog-in 0.18s ease-out; }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
+dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px); }
+#edit-form, #block-edit-form { display: flex; flex-direction: column; gap: 0.75rem; }
 /* Big writing box (Alex asked 2026-11-03), bigger still on desktop. */
 #edit-text { min-height: 13rem; }
 @media (min-width: 700px) and (pointer: fine) {
   dialog { width: min(48rem, calc(100vw - 4rem)); }
   #edit-text { min-height: 50vh; }
+  #block-edit { width: min(32rem, calc(100vw - 4rem)); }
 }
-#edit-form > label { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); }
-#edit-image { max-width: 100%; max-height: 50vh; border-radius: 6px; display: block; margin-bottom: 0.5rem; }
+#edit-form > label { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.9rem; }
+#edit-image { max-width: 100%; max-height: 50vh; border-radius: 10px; display: block; margin-bottom: 0.5rem; }
+
+/* ---------- Project board ---------- */
+/* A dotted grid that scrolls both ways; blocks are absolutely placed on whole cells. */
+.board-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0.6rem var(--pad) var(--pad);
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+  overscroll-behavior: contain;
+}
+.board {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--muted) 45%, transparent) 1px, transparent 1.3px);
+  background-size: var(--grid) var(--grid);
+}
+.board.active { cursor: grabbing; }
+.board-empty {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+  padding: 0 2rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+.block {
+  --tint: var(--surface);
+  --edge: var(--line);
+  position: absolute;
+  box-sizing: border-box;
+  min-height: calc(var(--grid) * 2 - 4px);
+  padding: 0.45rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--edge);
+  background: var(--tint);
+  box-shadow: var(--shadow);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none; /* a finger on a block drags it; on empty grid it scrolls the board */
+  transition: box-shadow 0.15s, transform 0.15s, left 0.12s ease-out, top 0.12s ease-out;
+}
+.block:focus { outline: none; }
+.block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.block-text { white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; }
+.block.dragging {
+  z-index: 10;
+  cursor: grabbing;
+  transform: rotate(-1.2deg) scale(1.03);
+  box-shadow: var(--shadow-lift);
+  transition: box-shadow 0.15s, transform 0.15s; /* follow the pointer without lag */
+}
+.block.resizing { z-index: 10; box-shadow: var(--shadow-lift); }
+/* Resize handle: bottom-right corner, two small diagonal lines. */
+.block-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: ew-resize;
+  border-bottom-right-radius: 10px;
+  background:
+    linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--muted) 55%, transparent) 55% 62%, transparent 62% 72%,
+      color-mix(in srgb, var(--muted) 55%, transparent) 72% 79%, transparent 79%);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.block:hover .block-resize, .block:focus-visible .block-resize, .block.resizing .block-resize { opacity: 1; }
+@media (pointer: coarse) { .block-resize { opacity: 0.8; width: 24px; height: 24px; } }
+/* Where a dragged block will land. */
+.block-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+/* Block colours (keys of BLOCK_COLORS in app.js). */
+[data-color="yellow"] { --tint: light-dark(#fff5c4, #3b3417); --edge: light-dark(#ecd98a, #5c5022); }
+[data-color="green"]  { --tint: light-dark(#dcf5e0, #183324); --edge: light-dark(#a8dcb3, #275239); }
+[data-color="blue"]   { --tint: light-dark(#dde8ff, #1a2744); --edge: light-dark(#adc4f5, #2c3f6b); }
+[data-color="pink"]   { --tint: light-dark(#ffe0ea, #3d1c29); --edge: light-dark(#f2b0c5, #5f2c41); }
+[data-color="purple"] { --tint: light-dark(#ece2ff, #2b2045); --edge: light-dark(#c9b5f2, #45346d); }
+
+.swatches { gap: 0.55rem; }
+.swatch {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--edge, color-mix(in srgb, var(--muted) 50%, transparent));
+  background: var(--tint, var(--surface));
+}
+.swatch:hover { background: var(--tint, var(--surface)); }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+#block-edit-text { min-height: 7rem; }
 
 .visually-hidden {
   position: absolute;

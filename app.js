@@ -7,6 +7,8 @@
 //                             image?, embedding?   (fact; image is a JPEG data URL)
 //                             archived?            (idea, thought)
 //                             tags?                (idea; array of strings) }
+//   users/{uid}/blocks/{id} { text, x, y, w, color, createdAt, updatedAt }  — Project board;
+//                             x, y, w are in grid cells (GRID px each), color is a BLOCK_COLORS key
 //   notes/{uid}             { text }  — the original single note, migrated into scratch once.
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js";
 import {
@@ -50,6 +52,8 @@ let userRef = null;
 let notesCol = null;
 let unsubs = [];
 let notes = []; // [{id, ...data}]
+let blocksCol = null;
+let blocks = []; // project board blocks [{id, ...data}]
 let userData = {};
 
 // ---------- helpers ----------
@@ -85,6 +89,13 @@ function relative(date) {
   if (abs < 60) return rtf.format(mins, "minute");
   if (abs < 48 * 60) return rtf.format(Math.round(mins / 60), "hour");
   return rtf.format(Math.round(mins / 1440), "day");
+}
+// "8 Nov" (with the year if it isn't this year), for list items.
+function shortDate(date) {
+  if (!date) return "";
+  const opts = { day: "numeric", month: "short" };
+  if (date.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+  return date.toLocaleDateString(undefined, opts);
 }
 function formatDate(date) {
   const opts = { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" };
@@ -136,9 +147,9 @@ function el(tag, props = {}, ...children) {
 
 // ---------- views / routing ----------
 
-const VIEWS = ["scratch", "tasks", "ideas", "thoughts", "facts"];
-// Ideas, thoughts and facts share the Library tab, which reopens whichever was used last.
-const LIBRARY = ["ideas", "thoughts", "facts"];
+const VIEWS = ["scratch", "tasks", "ideas", "thoughts", "facts", "project"];
+// Ideas, thoughts, facts and the project board share the Library tab, which reopens whichever was used last.
+const LIBRARY = ["ideas", "thoughts", "facts", "project"];
 const LIBRARY_KEY = "notes.libraryView"; // localStorage is shared by all of Alex's sites, so prefix it
 const OLD_HASHES = { urgent: "tasks" }; // old links and home-screen shortcuts
 
@@ -163,6 +174,7 @@ function route() {
   }
   $("view-title").textContent = $(`view-${view}`).dataset.title;
   if (view === "facts") startSemanticSearch();
+  if (view === "project") renderBoard(); // block heights can only be measured while visible
 }
 {
   const saved = localStorage.getItem(LIBRARY_KEY);
@@ -263,7 +275,7 @@ function renderFacts() {
     ? rank(facts, factQuery, factQueryEmbedding)
     : facts.sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
   fillList($("fact-list"), shown.map((n) => noteItem(n, {
-    meta: toDate(n.createdAt)?.toLocaleDateString(),
+    meta: shortDate(toDate(n.createdAt)),
   })), factQuery ? "No matching facts" : "No facts yet");
 }
 
@@ -280,7 +292,7 @@ function renderThoughts() {
   const older = live.filter((n) => toDate(n.createdAt) <= cutoff);
   const archived = thoughts.filter((n) => n.archived);
 
-  const item = (n) => noteItem(n, { meta: toDate(n.createdAt)?.toLocaleDateString(), actions: moveActions(n) });
+  const item = (n) => noteItem(n, { meta: shortDate(toDate(n.createdAt)), actions: moveActions(n) });
   fillList($("thought-new"), fresh.map(item), "Nothing new since your last review");
   fillList($("thought-old"), older.map(item), "Nothing here");
   $("thought-archived").replaceChildren(...archived.map(item));
@@ -369,7 +381,7 @@ function renderIdeas() {
 
   const shown = ideaFilter ? ideas.filter((n) => n.tags?.includes(ideaFilter)) : ideas;
   const item = (n) => noteItem(n, {
-    meta: toDate(n.createdAt)?.toLocaleDateString(), actions: moveActions(n), onTag: setIdeaFilter,
+    meta: shortDate(toDate(n.createdAt)), actions: moveActions(n), onTag: setIdeaFilter,
   });
   const archived = shown.filter((n) => n.archived);
   fillList($("idea-list"), shown.filter((n) => !n.archived).map(item), ideaFilter ? `No ideas tagged “${ideaFilter}”` : "No ideas yet");
@@ -761,6 +773,332 @@ async function addFromEditor(type, text, due, image, tags) {
   if (type === "fact") backfillEmbeddings();
 }
 
+// ---------- project board ----------
+// Blocks sit on a grid of GRID px cells. Drag a block to move it (it snaps to the nearest
+// cell on release), drag its corner to change its width, tap it to edit. Blocks can overlap;
+// the most recently changed one is drawn on top. Heights follow the text, rounded up to whole cells.
+
+const GRID = 24; // px per grid cell
+const BLOCK_W = 7; // default width in cells
+const MIN_W = 3;
+const MAX_W = 40;
+const DRAG_SLOP = 5; // px the pointer must move before a press becomes a drag
+const BOARD_MARGIN = 6; // spare cells right of and below the last block, room to drag into
+const BLOCK_COLORS = { plain: "Plain", yellow: "Yellow", green: "Green", blue: "Blue", pink: "Pink", purple: "Purple" };
+
+const boardWrap = $("board-wrap");
+const board = $("board");
+let drag = null; // {id, el, mode: "move"|"resize", startX, startY, x, y, w, moved, pointerId}
+
+const blockColor = (b) => (b.color in BLOCK_COLORS ? b.color : "plain");
+const cellsOf = (b, el) => ({
+  x: b.x ?? 0, y: b.y ?? 0, w: b.w ?? BLOCK_W,
+  h: el ? Math.round((el.offsetHeight + 4) / GRID) : 2,
+});
+
+function placeBlockEl(el, x, y, w) {
+  el.style.left = `${x * GRID + 2}px`;
+  el.style.top = `${y * GRID + 2}px`;
+  el.style.width = `${w * GRID - 4}px`;
+}
+
+// Round a block's height up to whole cells (minus the 4px gap) so its edges sit on grid lines.
+function snapHeight(el) {
+  el.style.height = "";
+  el.style.height = `${Math.max(2, Math.ceil((el.offsetHeight + 4) / GRID)) * GRID - 4}px`;
+}
+
+function renderBoard() {
+  const byId = new Map([...board.querySelectorAll(".block")].map((el) => [el.dataset.id, el]));
+  const order = [...blocks].sort((a, b) => (toDate(a.updatedAt)?.getTime() ?? 0) - (toDate(b.updatedAt)?.getTime() ?? 0));
+  const els = order.map((b) => {
+    let el = byId.get(b.id);
+    if (!el) {
+      el = blockEl(b.id);
+    }
+    el.querySelector(".block-text").textContent = b.text || " ";
+    el.dataset.color = blockColor(b);
+    el.ariaLabel = `${b.text}. Arrow keys move, Enter edits.`;
+    if (drag?.id !== b.id) placeBlockEl(el, b.x ?? 0, b.y ?? 0, b.w ?? BLOCK_W);
+    return el;
+  });
+  // Stacking order = DOM order. Reordering is skipped mid-drag: moving the held block in the
+  // DOM would drop its pointer capture (CSS keeps it on top meanwhile).
+  for (const [id, el] of byId) if (!els.includes(el)) { el.remove(); byId.delete(id); }
+  if (drag) for (const el of els) { if (!el.isConnected) board.append(el); }
+  else {
+    const focused = document.activeElement;
+    const current = [...board.querySelectorAll(".block")];
+    if (els.some((el, i) => current[i] !== el)) board.append(...els);
+    if (focused?.classList.contains("block") && document.activeElement !== focused) focused.focus({ preventScroll: true });
+  }
+  for (const el of els) if (drag?.id !== el.dataset.id || drag.mode === "resize") snapHeight(el);
+  $("board-empty").hidden = blocks.length > 0;
+  sizeBoard();
+}
+
+// The board is as big as its blocks plus a margin, and at least as big as the visible area.
+function sizeBoard(extra) {
+  let cols = 0;
+  let rows = 0;
+  for (const el of board.querySelectorAll(".block")) {
+    const b = blocks.find((x) => x.id === el.dataset.id);
+    if (!b) continue;
+    const c = cellsOf(b, el);
+    cols = Math.max(cols, c.x + c.w);
+    rows = Math.max(rows, c.y + c.h);
+  }
+  if (extra) { cols = Math.max(cols, extra.x + extra.w); rows = Math.max(rows, extra.y + extra.h); }
+  board.style.width = `${Math.max((cols + BOARD_MARGIN) * GRID, Math.floor(boardWrap.clientWidth / GRID) * GRID)}px`;
+  board.style.height = `${Math.max((rows + BOARD_MARGIN) * GRID, Math.floor(boardWrap.clientHeight / GRID) * GRID)}px`;
+}
+window.addEventListener("resize", () => { if (!$("view-project").hidden) sizeBoard(); });
+
+function blockEl(id) {
+  const node = el("div", { class: "block", tabIndex: 0 },
+    el("div", { class: "block-text" }),
+    el("div", { class: "block-resize", title: "Drag to resize", ariaHidden: "true" }));
+  node.dataset.id = id;
+  node.addEventListener("pointerdown", startBlockDrag);
+  node.addEventListener("keydown", blockKey);
+  return node;
+}
+
+function startBlockDrag(e) {
+  if (e.button !== 0 || drag) return;
+  const el = e.currentTarget;
+  const b = blocks.find((x) => x.id === el.dataset.id);
+  if (!b) return;
+  e.preventDefault(); // no text selection; focus is moved by hand below
+  el.focus({ preventScroll: true });
+  el.setPointerCapture(e.pointerId);
+  const { x, y, w } = cellsOf(b);
+  drag = {
+    id: b.id, el, mode: e.target.closest(".block-resize") ? "resize" : "move", pointerId: e.pointerId,
+    startX: e.clientX, startY: e.clientY, scroll0: [boardWrap.scrollLeft, boardWrap.scrollTop],
+    x0: x, y0: y, w0: w, x, y, w, moved: false, lastEvent: e,
+  };
+  el.addEventListener("pointermove", moveBlockDrag);
+  el.addEventListener("pointerup", endBlockDrag);
+  el.addEventListener("pointercancel", endBlockDrag);
+}
+
+function moveBlockDrag(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  drag.lastEvent = e;
+  updateDrag();
+  if (drag.moved) autoScroll();
+}
+
+// Where the block would land, from the pointer position and how far the board has scrolled.
+function updateDrag() {
+  const e = drag.lastEvent;
+  const dx = e.clientX - drag.startX + boardWrap.scrollLeft - drag.scroll0[0];
+  const dy = e.clientY - drag.startY + boardWrap.scrollTop - drag.scroll0[1];
+  if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_SLOP) return;
+  if (!drag.moved) {
+    drag.moved = true;
+    drag.el.classList.add(drag.mode === "move" ? "dragging" : "resizing");
+    board.classList.add("active");
+  }
+  const el = drag.el;
+  if (drag.mode === "move") {
+    // The block follows the pointer exactly; the shadow cell shows where it will snap.
+    drag.x = Math.max(0, Math.round(drag.x0 + dx / GRID));
+    drag.y = Math.max(0, Math.round(drag.y0 + dy / GRID));
+    el.style.left = `${Math.max(0, drag.x0 * GRID + dx) + 2}px`;
+    el.style.top = `${Math.max(0, drag.y0 * GRID + dy) + 2}px`;
+  } else {
+    drag.w = Math.min(MAX_W, Math.max(MIN_W, Math.round(drag.w0 + dx / GRID)));
+    placeBlockEl(el, drag.x, drag.y, drag.w);
+    snapHeight(el);
+  }
+  showGhost(drag.x, drag.y, drag.w, Math.round((el.offsetHeight + 4) / GRID));
+  sizeBoard({ x: drag.x, y: drag.y, w: drag.w, h: Math.round((el.offsetHeight + 4) / GRID) });
+}
+
+function showGhost(x, y, w, h) {
+  let ghost = $("block-ghost");
+  if (!ghost) {
+    ghost = el("div", { id: "block-ghost", class: "block-ghost" });
+    board.prepend(ghost);
+  }
+  ghost.style.left = `${x * GRID}px`;
+  ghost.style.top = `${y * GRID}px`;
+  ghost.style.width = `${w * GRID}px`;
+  ghost.style.height = `${h * GRID}px`;
+}
+
+// Scroll the board while a block is held near its edge, so blocks can go beyond the visible area.
+let scrollFrame = 0;
+function autoScroll() {
+  if (scrollFrame) return;
+  const step = () => {
+    scrollFrame = 0;
+    if (!drag?.moved) return;
+    const e = drag.lastEvent;
+    const r = boardWrap.getBoundingClientRect();
+    const edge = 40;
+    const speed = (d) => (d < edge ? Math.ceil((edge - d) / 4) : 0);
+    const sx = speed(r.right - e.clientX) - speed(e.clientX - r.left);
+    const sy = speed(r.bottom - e.clientY) - speed(e.clientY - r.top);
+    if (!sx && !sy) return;
+    boardWrap.scrollBy(sx, sy);
+    updateDrag();
+    scrollFrame = requestAnimationFrame(step);
+  };
+  scrollFrame = requestAnimationFrame(step);
+}
+
+function endBlockDrag(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  const d = drag;
+  drag = null;
+  cancelAnimationFrame(scrollFrame);
+  scrollFrame = 0;
+  d.el.removeEventListener("pointermove", moveBlockDrag);
+  d.el.removeEventListener("pointerup", endBlockDrag);
+  d.el.removeEventListener("pointercancel", endBlockDrag);
+  d.el.classList.remove("dragging", "resizing");
+  board.classList.remove("active");
+  $("block-ghost")?.remove();
+  const b = blocks.find((x) => x.id === d.id);
+  if (!d.moved) {
+    renderBoard();
+    if (e.type === "pointerup" && b) openBlockEditor(b);
+    return;
+  }
+  if (!b || e.type === "pointercancel" || (d.x === d.x0 && d.y === d.y0 && d.w === d.w0)) {
+    renderBoard();
+    return;
+  }
+  moveBlock(b, { x: d.x, y: d.y, w: d.w });
+}
+
+// Save a new position/width; shown straight away, before Firestore's own update arrives.
+function moveBlock(b, pos) {
+  Object.assign(b, pos, { updatedAt: Date.now() });
+  renderBoard();
+  guard(updateDoc(doc(blocksCol, b.id), { ...pos, updatedAt: serverTimestamp() }), "move block");
+}
+
+// Keyboard: arrows move the focused block a cell (Shift = 4 cells), Enter edits, Delete deletes.
+function blockKey(e) {
+  const b = blocks.find((x) => x.id === e.currentTarget.dataset.id);
+  if (!b) return;
+  const n = e.shiftKey ? 4 : 1;
+  const moves = { ArrowLeft: [-n, 0], ArrowRight: [n, 0], ArrowUp: [0, -n], ArrowDown: [0, n] };
+  if (moves[e.key]) {
+    e.preventDefault();
+    const [dx, dy] = moves[e.key];
+    const { x, y } = cellsOf(b);
+    if (Math.max(0, x + dx) !== x || Math.max(0, y + dy) !== y) moveBlock(b, { x: Math.max(0, x + dx), y: Math.max(0, y + dy) });
+    requestAnimationFrame(() => board.querySelector(`[data-id="${b.id}"]`)?.focus());
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    openBlockEditor(b);
+  } else if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault();
+    if (confirm("Delete this block?")) guard(deleteDoc(doc(blocksCol, b.id)), "delete block");
+  }
+}
+
+// First free spot for a new block, starting at the top-left of the visible part of the board.
+function freeSpot(w, h) {
+  const taken = [...board.querySelectorAll(".block")].map((el) => {
+    const b = blocks.find((x) => x.id === el.dataset.id);
+    return b ? cellsOf(b, el) : null;
+  }).filter(Boolean);
+  const overlaps = (x, y) => taken.some((t) => x < t.x + t.w && t.x < x + w && y < t.y + t.h && t.y < y + h);
+  const x0 = Math.ceil(boardWrap.scrollLeft / GRID) + 1;
+  const y0 = Math.ceil(boardWrap.scrollTop / GRID) + 1;
+  const cols = Math.max(w, Math.floor(boardWrap.clientWidth / GRID) - 2);
+  for (let y = y0; y < y0 + 400; y++) {
+    for (let x = x0; x + w <= x0 + cols; x++) if (!overlaps(x, y)) return { x, y };
+  }
+  return { x: x0, y: y0 };
+}
+
+async function addBlock(text, color = "plain") {
+  if (!text) return;
+  const w = Math.min(BLOCK_W, Math.max(MIN_W, Math.floor(boardWrap.clientWidth / GRID) - 2));
+  const { x, y } = freeSpot(w, 2);
+  await guard(addDoc(blocksCol, {
+    text, x, y, w, color, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }), "add block");
+}
+
+$("block-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("block-text").value.trim();
+  if (!text) {
+    openBlockEditor({ text: "", color: "plain" }); // empty Add opens the bigger editor
+    return;
+  }
+  $("block-text").value = "";
+  $("block-text").focus(); // keep the keyboard up for the next one
+  await addBlock(text);
+});
+// Blocks are usually short: Enter adds one, Shift+Enter starts a new line.
+$("block-text").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    e.target.form.requestSubmit();
+  }
+});
+
+// Block editor dialog: text, colour, delete. A block without an id is a new block.
+const blockDialog = $("block-edit");
+let editingBlock = null; // {block, color, start}
+$("block-colors").replaceChildren(...Object.entries(BLOCK_COLORS).map(([key, label]) => el("button", {
+  type: "button", class: "swatch", title: label, ariaLabel: label, role: "radio",
+  onclick: () => { editingBlock.color = key; syncSwatches(); },
+})));
+[...$("block-colors").children].forEach((b, i) => { b.dataset.color = Object.keys(BLOCK_COLORS)[i]; });
+
+function syncSwatches() {
+  for (const s of $("block-colors").children) s.ariaChecked = String(s.dataset.color === editingBlock.color);
+}
+const blockEditorState = () => JSON.stringify([$("block-edit-text").value, editingBlock.color]);
+
+function openBlockEditor(block) {
+  editingBlock = { block, color: blockColor(block) };
+  blockDialog.returnValue = "";
+  $("block-edit-text").value = block.text ?? "";
+  $("block-delete").hidden = !block.id;
+  $("block-save").textContent = block.id ? "Save" : "Add";
+  syncSwatches();
+  editingBlock.start = blockEditorState();
+  blockDialog.showModal();
+  if (!block.id) $("block-edit-text").focus();
+}
+function cancelBlockEditor() {
+  if (!editingBlock || blockEditorState() === editingBlock.start || confirm("Discard your changes?")) blockDialog.close("cancel");
+}
+blockDialog.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing) { e.preventDefault(); cancelBlockEditor(); }
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); blockDialog.close("save"); }
+});
+blockDialog.addEventListener("cancel", (e) => { e.preventDefault(); cancelBlockEditor(); });
+$("block-delete").addEventListener("click", async () => {
+  if (!confirm("Delete this block?")) return;
+  const { block } = editingBlock;
+  blockDialog.close();
+  await guard(deleteDoc(doc(blocksCol, block.id)), "delete block");
+});
+blockDialog.addEventListener("close", async () => {
+  if (blockDialog.returnValue !== "save" || !editingBlock) return;
+  blockDialog.returnValue = "";
+  const { block, color } = editingBlock;
+  const text = $("block-edit-text").value.trim();
+  if (!block.id) {
+    await addBlock(text, color);
+    return;
+  }
+  if (!text) return; // an emptied block is kept; Delete removes it
+  await guard(updateDoc(doc(blocksCol, block.id), { text, color, updatedAt: serverTimestamp() }), "save block");
+});
+
 // ---------- auth & live data ----------
 
 // Sync status from both listeners' metadata:
@@ -808,6 +1146,8 @@ onAuthStateChanged(auth, (user) => {
   unsubs.forEach((u) => u());
   unsubs = [];
   notes = [];
+  blocks = [];
+  renderBoard();
   userData = {};
 
   $("signin").hidden = Boolean(user);
@@ -819,7 +1159,7 @@ onAuthStateChanged(auth, (user) => {
   $("signout").title = user ? `Signed in as ${user.email}` : "";
 
   if (!user) {
-    userRef = notesCol = null;
+    userRef = notesCol = blocksCol = null;
     scratch.value = "";
     updateScratchClear();
     setStatus("");
@@ -828,6 +1168,7 @@ onAuthStateChanged(auth, (user) => {
 
   userRef = doc(db, "users", user.uid);
   notesCol = collection(userRef, "notes");
+  blocksCol = collection(userRef, "blocks");
   setStatus("Loading…");
   let migrated = false;
   syncState = {};
@@ -860,6 +1201,12 @@ onAuthStateChanged(auth, (user) => {
     updateSync("notes", snap.metadata);
     backfillEmbeddings();
   }, (err) => setStatus(loadError(user, err, "load notes"), true)));
+
+  unsubs.push(onSnapshot(blocksCol, { includeMetadataChanges: true }, (snap) => {
+    blocks = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    renderBoard();
+    updateSync("blocks", snap.metadata);
+  }, (err) => setStatus(loadError(user, err, "load the project board"), true)));
 });
 
 $("signin").addEventListener("click", async () => {
@@ -921,6 +1268,6 @@ import("https://cdn.jsdelivr.net/gh/alexknight0/pages-common@1.0.0/update.js")
 
 // Opened from a home-screen shortcut (e.g. ./#tasks): jump straight into the capture box.
 if (location.hash) {
-  const target = { tasks: "task-text", ideas: "idea-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch" }[currentView()];
+  const target = { tasks: "task-text", ideas: "idea-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch", project: "block-text" }[currentView()];
   if (target) setTimeout(() => $(target).focus(), 300);
 }
