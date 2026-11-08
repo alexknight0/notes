@@ -380,29 +380,27 @@ body.keyboard #tabs { display: none; }
   color: var(--muted);
   text-decoration: none;
 }
-/* The active tab's icon sits in a soft accent pill. */
+/* Inactive icons are grey; the active tab's icon is in full colour. */
 #tabs a span {
   font-size: 1.2rem;
   line-height: 1.7rem;
-  width: 3.6rem;
-  text-align: center;
-  border-radius: 999px;
   filter: grayscale(1);
   opacity: 0.65;
-  transition: background-color 0.2s, opacity 0.2s;
+  transition: filter 0.2s, opacity 0.2s, transform 0.2s;
 }
+/* Hover lights the tab up: a faint accent glow over the whole section, icon in colour. */
 @media (hover: hover) { /* not on touch screens, where :hover sticks after a tap */
-  #tabs a:hover { background: var(--surface-2); color: var(--text); }
-  #tabs a:hover span { opacity: 0.9; }
+  #tabs a:hover { background: linear-gradient(to top, var(--accent-soft), transparent 85%); color: var(--accent-ink); }
+  #tabs a:hover span { filter: none; opacity: 1; transform: translateY(-1px) scale(1.08); }
 }
-#tabs a:active { background: color-mix(in srgb, var(--surface-2) 80%, currentColor 10%); }
+#tabs a:active span { transform: scale(0.94); }
 #tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #tabs a.active { color: var(--accent-ink); font-weight: 650; }
-#tabs a.active span { filter: none; opacity: 1; background: var(--accent-soft); }
+#tabs a.active span { filter: none; opacity: 1; }
 #tabs b {
   position: absolute;
   top: 0.35rem;
-  left: calc(50% + 0.7rem);
+  left: calc(50% + 0.4rem);
   min-width: 1.1rem;
   padding: 0 0.3rem;
   box-sizing: border-box;
