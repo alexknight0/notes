@@ -380,27 +380,30 @@ body.keyboard #tabs { display: none; }
   color: var(--muted);
   text-decoration: none;
 }
-/* Inactive icons are grey; the active tab's icon is in full colour. */
-#tabs a span {
-  font-size: 1.2rem;
-  line-height: 1.7rem;
-  filter: grayscale(1);
-  opacity: 0.65;
-  transition: filter 0.2s, opacity 0.2s, transform 0.2s;
+/* Thin line icons drawn in the text colour: muted when inactive, accent when active. */
+#tabs a svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.2s;
 }
-/* Hover lights the tab up: a faint accent glow over the whole section, icon in colour. */
+/* Hover lights the tab up: label and icon go from muted to full strength, icon lifts a touch. */
 @media (hover: hover) { /* not on touch screens, where :hover sticks after a tap */
-  #tabs a:hover { background: linear-gradient(to top, var(--accent-soft), transparent 85%); color: var(--accent-ink); }
-  #tabs a:hover span { filter: none; opacity: 1; transform: translateY(-1px) scale(1.08); }
+  #tabs a:hover { color: var(--text); }
+  #tabs a:hover svg { transform: translateY(-1px); }
 }
-#tabs a:active span { transform: scale(0.94); }
+#tabs a:active svg { transform: scale(0.92); }
 #tabs a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-#tabs a.active { color: var(--accent-ink); font-weight: 650; }
-#tabs a.active span { filter: none; opacity: 1; }
+#tabs a.active, #tabs a.active:hover { color: var(--accent-ink); font-weight: 650; }
+#tabs a.active svg { stroke-width: 2.2; }
 #tabs b {
   position: absolute;
   top: 0.35rem;
-  left: calc(50% + 0.4rem);
+  left: calc(50% + 0.55rem);
   min-width: 1.1rem;
   padding: 0 0.3rem;
   box-sizing: border-box;
