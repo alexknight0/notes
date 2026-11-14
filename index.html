@@ -83,7 +83,7 @@
       <a href="#ideas" data-view="ideas">💡 Ideas</a>
       <a href="#thoughts" data-view="thoughts">💭 Thoughts<b id="thought-subbadge" hidden></b></a>
       <a href="#facts" data-view="facts">📌 Facts</a>
-      <a href="#project" data-view="project">🧩 Project</a>
+      <a href="#projects" data-view="projects">📋 Projects</a>
     </nav>
 
     <!-- 2.3. Ideas: like thoughts, but no review cycle -->
@@ -127,18 +127,27 @@
       </form>
     </section>
 
-    <!-- Project board: blocks of text dragged around on a grid (users/{uid}/blocks). -->
-    <section id="view-project" class="view" data-title="Project" hidden>
-      <div id="board-wrap" class="board-wrap">
-        <div id="board" class="board" role="group" aria-label="Project board"></div>
-        <p id="board-empty" class="board-empty" hidden>Add a block, then drag it anywhere on the grid.<br>Tap a block to edit it; drag its corner to resize.</p>
+    <!-- Projects: to-do tasks sorted into coloured groups (users/{uid}/projects, users/{uid}/ptasks).
+         Phone: one group at a time; the map at the top shows every group and its count. Swipe a
+         task sideways to finish it, swipe empty space to change group. Wide screens: all groups
+         side by side. -->
+    <section id="view-projects" class="view" data-title="Projects" hidden>
+      <div class="proj-head" id="proj-head">
+        <button id="proj-pick" type="button" class="proj-pick" aria-haspopup="dialog"><span id="proj-name"></span><span class="caret" aria-hidden="true">▾</span></button>
+        <span id="proj-remaining" class="proj-remaining"></span>
       </div>
-      <form class="dock" id="block-form" autocomplete="off">
-        <div class="row">
-          <textarea id="block-text" rows="1" placeholder="New block…" aria-label="Block" enterkeyhint="done"></textarea>
-          <button type="submit">Add<span class="wide-only"> block</span></button>
-        </div>
-      </form>
+      <div id="proj-map" class="proj-map" aria-label="Groups"></div>
+      <div id="proj-board" class="proj-board"></div>
+      <div id="proj-empty" class="proj-empty" hidden>
+        <p>Sort a project's tasks into groups like Now, Next and Later.</p>
+        <button id="proj-create" type="button" class="primary">New project</button>
+      </div>
+      <button id="proj-add" type="button" class="primary proj-fab" hidden><span aria-hidden="true">+</span> Add</button>
+      <div id="proj-toast" class="proj-toast" role="status" hidden>
+        <span>Done</span><span class="spacer"></span>
+        <button id="proj-toast-finished" type="button">See finished</button>
+        <button id="proj-toast-undo" type="button">Undo</button>
+      </div>
     </section>
 
     <!-- 2.2. Thoughts to revisit -->
@@ -204,15 +213,57 @@
     </form>
   </dialog>
 
-  <dialog id="block-edit">
-    <form method="dialog" id="block-edit-form">
-      <textarea id="block-edit-text" rows="4" aria-label="Block text" placeholder="Write something…"></textarea>
-      <div class="row swatches" role="radiogroup" aria-label="Colour" id="block-colors"></div>
+  <!-- Projects: add or edit a task. A new task goes into the group on screen. -->
+  <dialog id="ptask-edit">
+    <form method="dialog" id="ptask-form" class="pdialog">
+      <h3 id="ptask-title"></h3>
+      <textarea id="ptask-text" rows="3" aria-label="Task" placeholder="What needs doing?" enterkeyhint="done"></textarea>
+      <div id="ptask-groups" class="row chips" role="radiogroup" aria-label="Group"></div>
       <div class="row">
-        <button id="block-delete" type="button" class="danger">Delete</button>
+        <button id="ptask-delete" type="button" class="danger">Delete</button>
         <span class="spacer"></span>
         <button value="cancel" formnovalidate>Cancel</button>
-        <button id="block-save" value="save" class="primary">Save</button>
+        <button id="ptask-save" value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Projects: a group's title and colour. -->
+  <dialog id="pgroup-edit">
+    <form method="dialog" id="pgroup-form" class="pdialog">
+      <h3 id="pgroup-title">Edit group</h3>
+      <input id="pgroup-name" aria-label="Group title" placeholder="Group title" maxlength="40" enterkeyhint="done">
+      <div class="row swatches" role="radiogroup" aria-label="Colour" id="pgroup-colors"></div>
+      <div class="row">
+        <button id="pgroup-delete" type="button" class="danger">Delete group</button>
+        <span class="spacer"></span>
+        <button value="cancel" formnovalidate>Cancel</button>
+        <button id="pgroup-save" value="save" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Projects: the ▾ menu (switch / rename / finished tasks / new / delete). -->
+  <dialog id="proj-menu" class="menu-dialog">
+    <form method="dialog">
+      <div id="proj-menu-list" class="menu-list"></div>
+      <hr>
+      <button type="button" id="proj-menu-finished" class="menu-item">Finished tasks <small id="proj-menu-finished-n"></small></button>
+      <button type="button" id="proj-menu-rename" class="menu-item">Rename project</button>
+      <button type="button" id="proj-menu-new" class="menu-item">New project</button>
+      <button type="button" id="proj-menu-delete" class="menu-item danger-text">Delete project</button>
+    </form>
+  </dialog>
+
+  <!-- Projects: finished tasks for the whole project, newest first. -->
+  <dialog id="proj-done">
+    <form method="dialog" class="pdialog">
+      <h3>Finished <small id="proj-done-sub"></small></h3>
+      <div id="proj-done-list" class="done-list"></div>
+      <div class="row">
+        <button id="proj-done-clear" type="button" class="danger">Clear all</button>
+        <span class="spacer"></span>
+        <button value="close">Close</button>
       </div>
     </form>
   </dialog>

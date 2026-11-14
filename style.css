@@ -18,7 +18,6 @@
   --shadow-lift: light-dark(0 10px 30px rgb(30 30 40 / 0.16), 0 10px 30px rgb(0 0 0 / 0.55));
   --radius: 14px;
   --pad: 1rem;
-  --grid: 24px; /* project board cell; keep in step with GRID in app.js */
 }
 
 [hidden] { display: none !important; }
@@ -125,7 +124,7 @@ h2 {
   .wide-only { display: inline; }
   /* The Add button lives in the title row (#header-add), so docks with nothing else in them
      go; the facts dock keeps just its search box. */
-  #task-form, #idea-form, #thought-form, #block-form, #fact-form .row { display: none; }
+  #task-form, #idea-form, #thought-form, #fact-form .row { display: none; }
 }
 #header-add { display: none; margin-left: 0.4rem; padding: 0.35rem 0.85rem; font-size: 0.9rem; }
 @media (min-width: 700px) and (pointer: fine) { #header-add { display: inline-block; } }
@@ -325,7 +324,7 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; overflow-x: hidden; 
 .reminders span { flex: 1; }
 .reminders[hidden] { display: none; }
 
-/* Ideas / Thoughts / Facts / Project switcher at the top of the Library tab. */
+/* Ideas / Thoughts / Facts / Projects switcher at the top of the Library tab. */
 .segmented {
   flex: none;
   display: flex;
@@ -445,114 +444,16 @@ dialog {
 dialog[open] { animation: dialog-in 0.18s ease-out; }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px); }
-#edit-form, #block-edit-form { display: flex; flex-direction: column; gap: 0.75rem; }
+#edit-form, .pdialog { display: flex; flex-direction: column; gap: 0.75rem; }
 /* Big writing box (Alex asked 2026-11-03), bigger still on desktop. */
 #edit-text { min-height: 13rem; }
 @media (min-width: 700px) and (pointer: fine) {
   dialog { width: min(48rem, calc(100vw - 4rem)); }
   #edit-text { min-height: 50vh; }
-  #block-edit { width: min(32rem, calc(100vw - 4rem)); }
+  #ptask-edit, #pgroup-edit, #proj-done { width: min(32rem, calc(100vw - 4rem)); }
 }
 #edit-form > label { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.9rem; }
 #edit-image { max-width: 100%; max-height: 50vh; border-radius: 10px; display: block; margin-bottom: 0.5rem; }
-
-/* ---------- Project board ---------- */
-/* A dotted grid that scrolls both ways; blocks are absolutely placed on whole cells. */
-.board-wrap {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  margin: 0.6rem var(--pad) var(--pad);
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface) 55%, var(--bg));
-  overscroll-behavior: contain;
-}
-.board {
-  position: relative;
-  min-width: 100%;
-  min-height: 100%;
-  background-image: radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--muted) 45%, transparent) 1px, transparent 1.3px);
-  background-size: var(--grid) var(--grid);
-}
-.board.active { cursor: grabbing; }
-.board-empty {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  height: fit-content;
-  padding: 0 2rem;
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.6;
-  pointer-events: none;
-}
-
-.block {
-  --tint: var(--surface);
-  --edge: var(--line);
-  position: absolute;
-  box-sizing: border-box;
-  min-height: calc(var(--grid) * 2 - 4px);
-  padding: 0.45rem 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--edge);
-  background: var(--tint);
-  box-shadow: var(--shadow);
-  font-size: 0.9rem;
-  line-height: 1.35;
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none; /* a finger on a block drags it; on empty grid it scrolls the board */
-  transition: box-shadow 0.15s, transform 0.15s, left 0.12s ease-out, top 0.12s ease-out;
-}
-.block:focus { outline: none; }
-.block:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.block-text { white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; }
-.block.dragging {
-  z-index: 10;
-  cursor: grabbing;
-  transform: rotate(-1.2deg) scale(1.03);
-  box-shadow: var(--shadow-lift);
-  transition: box-shadow 0.15s, transform 0.15s; /* follow the pointer without lag */
-}
-.block.resizing { z-index: 10; box-shadow: var(--shadow-lift); }
-/* Resize handle: bottom-right corner, two small diagonal lines. */
-.block-resize {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 18px;
-  height: 18px;
-  cursor: ew-resize;
-  border-bottom-right-radius: 10px;
-  background:
-    linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--muted) 55%, transparent) 55% 62%, transparent 62% 72%,
-      color-mix(in srgb, var(--muted) 55%, transparent) 72% 79%, transparent 79%);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.block:hover .block-resize, .block:focus-visible .block-resize, .block.resizing .block-resize { opacity: 1; }
-@media (pointer: coarse) { .block-resize { opacity: 0.8; width: 24px; height: 24px; } }
-/* Where a dragged block will land. */
-.block-ghost {
-  position: absolute;
-  box-sizing: border-box;
-  border-radius: 10px;
-  border: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
-  background: var(--accent-soft);
-  pointer-events: none;
-}
-
-/* Block colours (keys of BLOCK_COLORS in app.js). */
-[data-color="yellow"] { --tint: light-dark(#fff5c4, #3b3417); --edge: light-dark(#ecd98a, #5c5022); }
-[data-color="green"]  { --tint: light-dark(#dcf5e0, #183324); --edge: light-dark(#a8dcb3, #275239); }
-[data-color="blue"]   { --tint: light-dark(#dde8ff, #1a2744); --edge: light-dark(#adc4f5, #2c3f6b); }
-[data-color="pink"]   { --tint: light-dark(#ffe0ea, #3d1c29); --edge: light-dark(#f2b0c5, #5f2c41); }
-[data-color="purple"] { --tint: light-dark(#ece2ff, #2b2045); --edge: light-dark(#c9b5f2, #45346d); }
 
 .swatches { gap: 0.55rem; }
 .swatch {
@@ -560,12 +461,175 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
   height: 2rem;
   padding: 0;
   border-radius: 50%;
-  border: 2px solid var(--edge, color-mix(in srgb, var(--muted) 50%, transparent));
-  background: var(--tint, var(--surface));
+  border: 2px solid var(--g);
+  background: var(--g);
+  position: relative;
 }
-.swatch:hover { background: var(--tint, var(--surface)); }
-.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
-#block-edit-text { min-height: 7rem; }
+.swatch:hover { background: var(--g); }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--g); }
+.swatch[aria-checked="true"]::after { content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: white; font-weight: 800; font-size: 0.85rem; }
+
+/* ---------- Projects ---------- */
+/* Group colours (keys of GROUP_COLORS in app.js); --g is the colour, .gink-style text uses --g-ink. */
+[data-g="red"]    { --g: light-dark(#e5484d, #ff6b6b); }
+[data-g="orange"] { --g: light-dark(#f08c28, #ffa94d); }
+[data-g="yellow"] { --g: light-dark(#d4a500, #ffd43b); }
+[data-g="green"]  { --g: light-dark(#30a46c, #51cf66); }
+[data-g="teal"]   { --g: light-dark(#12a594, #38d9a9); }
+[data-g="blue"]   { --g: light-dark(#3a63e0, #6b8cff); }
+[data-g="purple"] { --g: light-dark(#8e4ec6, #b197fc); }
+[data-g="pink"]   { --g: light-dark(#d6409f, #f783ac); }
+[data-g="grey"]   { --g: light-dark(#8b8d98, #868e96); }
+[data-g] { --g-ink: light-dark(color-mix(in srgb, var(--g) 72%, black), var(--g)); }
+
+#view-projects { position: relative; }
+.proj-head { flex: none; display: flex; align-items: center; gap: 0.6rem; margin: 0.7rem var(--pad) 0; }
+.proj-pick {
+  display: inline-flex; align-items: center; gap: 0.3rem; min-width: 0;
+  padding: 0.2rem 0.3rem; margin-left: -0.3rem; background: none; font-size: 1.02rem; font-weight: 650;
+}
+.proj-pick #proj-name { overflow: hidden; text-overflow: ellipsis; }
+.proj-pick .caret { color: var(--muted); font-size: 0.8rem; }
+.proj-remaining { font-size: 0.82rem; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* The map: one tile per group with its count and a line per task; the group on screen is outlined. */
+.proj-map { flex: none; display: flex; gap: 4px; margin: 0.6rem var(--pad) 0; padding: 4px; border-radius: 14px; background: var(--surface-2); }
+.ptile {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0.3rem;
+  padding: 0.38rem 0.45rem 0.45rem; border-radius: 10px; border: none; text-align: left;
+  background: color-mix(in srgb, var(--g) 12%, var(--surface)); color: var(--g-ink);
+  font-size: 0.72rem; font-weight: 700; transition: box-shadow 0.15s, background-color 0.15s;
+}
+.ptile:hover { background: color-mix(in srgb, var(--g) 18%, var(--surface)); }
+.ptile.on { background: var(--surface); box-shadow: 0 0 0 2px var(--g); }
+.ptile-label { display: flex; justify-content: space-between; gap: 0.3rem; }
+.ptile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptile-bars { display: flex; flex-direction: column; gap: 2px; min-height: 4px; }
+.ptile-bars i { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--g) 55%, transparent); }
+.ptile-add { flex: 0 0 1.8rem; align-items: center; justify-content: center; padding: 0; background: none; color: var(--muted); font-size: 1rem; font-weight: 600; border: 1.5px dashed color-mix(in srgb, var(--muted) 45%, transparent); }
+.ptile-add:hover { background: var(--surface); }
+.ptile.drop-over { box-shadow: 0 0 0 3px var(--g); transform: scale(1.04); }
+
+/* Columns. Phones: only the current group, filling the view. pan-y: vertical swipes scroll the
+   list natively, sideways ones come to app.js (finish a task / change group); pinch-zoom still works. */
+.proj-board { flex: 1; min-height: 0; display: flex; padding: 0.7rem var(--pad) var(--pad); touch-action: pan-y pinch-zoom; }
+/* Pinch-zoomed (set by app.js): swipes pan the zoomed page instead of finishing tasks. */
+#view-projects.zoomed .proj-board { touch-action: auto; }
+.pcol {
+  display: none; flex: 1; min-width: 0; flex-direction: column; gap: 0.45rem;
+  padding: 0.55rem; border-radius: 16px; box-sizing: border-box; overflow-y: auto; overflow-x: hidden;
+  background: color-mix(in srgb, var(--g) 10%, transparent);
+  /* room under the last task for the floating Add button */
+  padding-bottom: 4.5rem;
+}
+.pcol.current { display: flex; }
+.pcol.enter-right { animation: pcol-in-right 0.2s ease-out; }
+.pcol.enter-left { animation: pcol-in-left 0.2s ease-out; }
+@keyframes pcol-in-right { from { transform: translateX(30%); opacity: 0.3; } }
+@keyframes pcol-in-left { from { transform: translateX(-30%); opacity: 0.3; } }
+.pcol.drop-over { box-shadow: inset 0 0 0 2px var(--g); }
+.pcol-head { display: flex; align-items: center; gap: 0.4rem; margin: 0.1rem 0.3rem 0.1rem; font-size: 0.85rem; font-weight: 750; text-transform: none; letter-spacing: 0; color: var(--g-ink); }
+.pcol-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pcol-count { display: none; color: var(--muted); font-weight: 600; font-size: 0.75rem; }
+.pcol-more { margin-left: auto; padding: 0.1rem 0.45rem; background: none; color: var(--muted); letter-spacing: 2px; font-size: 0.85rem; }
+.pcol-add { display: none; align-self: flex-start; padding: 0.3rem 0.5rem; background: none; color: var(--muted); font-weight: 550; font-size: 0.85rem; }
+.pcol-add:hover { color: var(--text); }
+.plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.pempty { color: var(--muted); font-size: 0.85rem; padding: 0.3rem 0.4rem; }
+
+/* A task card. The body slides sideways over a green "✓ Done" layer while being swiped. */
+.pcard {
+  position: relative; border-radius: 12px; overflow: hidden; outline-offset: 2px;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: pointer;
+}
+.pcard-under {
+  position: absolute; inset: 0; display: none; align-items: center; padding: 0 1rem;
+  background: color-mix(in srgb, #2da44e 55%, var(--surface)); color: white; font-weight: 700; font-size: 0.85rem;
+  transition: background-color 0.12s;
+}
+.pcard.swiping .pcard-under { display: flex; }
+.pcard[data-dir="left"] .pcard-under { justify-content: flex-end; }
+.pcard.armed .pcard-under { background: #2da44e; }
+.pcard.leaving { transition: opacity 0.18s; opacity: 0.6; }
+.pcard-body {
+  position: relative; display: flex; align-items: flex-start; gap: 0.5rem;
+  padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface); box-shadow: var(--shadow); line-height: 1.4;
+}
+.pcard-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pcard-done { display: none; }
+.pcard.lifted { opacity: 0.35; }
+.pdrag-ghost {
+  position: fixed; z-index: 100; pointer-events: none; margin: 0;
+  transform: rotate(-1.5deg); box-shadow: var(--shadow-lift); list-style: none;
+}
+#view-projects.dragging .proj-board { touch-action: none; }
+
+.proj-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem; text-align: center; color: var(--muted); }
+
+/* The one Add button, floating bottom-right by your thumb (no row of its own). */
+.proj-fab {
+  position: absolute; right: calc(var(--pad) + 0.3rem); bottom: calc(var(--pad) + 0.3rem); z-index: 5;
+  padding: 0.75rem 1.15rem; border-radius: 16px; font-size: 0.95rem;
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 4px rgb(0 0 0 / 0.12);
+}
+.proj-fab span { font-size: 1.15rem; line-height: 1; font-weight: 500; margin-right: 0.15rem; }
+/* "Done · See finished · Undo" bar after finishing a task; covers the Add button for a few seconds. */
+.proj-toast {
+  position: absolute; left: var(--pad); right: var(--pad); bottom: calc(var(--pad) + 0.3rem); z-index: 6;
+  display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.4rem 0.35rem 0.9rem; border-radius: 12px;
+  background: light-dark(#1c1c1e, #ececf1); color: light-dark(white, #1c1c1e); font-size: 0.9rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.proj-toast[hidden] { display: none; }
+.proj-toast button { background: none; padding: 0.4rem 0.6rem; color: inherit; opacity: 0.65; font-weight: 500; font-size: 0.85rem; }
+.proj-toast #proj-toast-undo { opacity: 1; font-weight: 700; color: light-dark(#93aaff, #2f55c9); }
+
+/* Dialogs */
+.pdialog h3 { margin: 0; font-size: 1.05rem; }
+.pdialog h3 small { color: var(--muted); font-weight: 500; font-size: 0.82rem; margin-left: 0.3rem; }
+#ptask-title .gname { color: var(--g-ink); }
+#ptask-text { min-height: 7rem; }
+.chips { gap: 0.4rem; }
+.pchip.active { background: var(--g); border-color: var(--g); }
+.done-list { max-height: 55dvh; overflow-y: auto; }
+.done-list h4 { margin: 0.8rem 0 0.2rem; font-size: 0.7rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.done-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.35rem 0.1rem; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 0.92rem; }
+.done-row i { flex: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--g); opacity: 0.75; }
+.done-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.done-row button { background: none; color: var(--accent-ink); }
+
+/* The ▾ project menu: a small list near the top-left. */
+.menu-dialog { margin: 7rem auto auto var(--pad); width: min(16rem, calc(100vw - 2rem)); padding: 0.3rem; }
+@media (min-width: 700px) and (pointer: fine) { .menu-dialog { width: 16rem; margin-left: max(var(--pad), calc((100vw - 48rem) / 2 + var(--pad))); } }
+.menu-dialog::backdrop { background: transparent; backdrop-filter: none; }
+.menu-dialog form { display: flex; flex-direction: column; }
+.menu-dialog hr { border: none; border-top: 1px solid var(--line); margin: 0.25rem 0.4rem; width: auto; }
+.menu-list { display: flex; flex-direction: column; }
+.menu-item { display: flex; justify-content: space-between; gap: 0.5rem; padding: 0.55rem 0.7rem; background: none; border-radius: 9px; text-align: left; font-weight: 500; font-size: 0.92rem; }
+.menu-item small { color: var(--muted); }
+.menu-item.active { font-weight: 700; background: var(--surface-2); }
+.danger-text { color: var(--danger); }
+
+/* Wide screens with a mouse: every group side by side, like a board. Finish with the ✓ that
+   appears on hover (or x), drag a task to another column, "+ Add" under each column. */
+@media (min-width: 700px) and (pointer: fine) {
+  body:has(#view-projects:not([hidden])) { max-width: 80rem; }
+  .proj-map, .proj-fab { display: none; }
+  .proj-board { gap: 0.7rem; overflow-x: auto; touch-action: auto; align-items: flex-start; }
+  .pcol { display: flex; flex: 1 0 14rem; max-height: 100%; padding-bottom: 0.55rem; }
+  .pcol-count, .pcol-add { display: inline-block; }
+  .pcard-body { padding-right: 0.8rem; }
+  .pcard-done {
+    display: grid; place-items: center; flex: none; width: 1.7rem; height: 1.7rem; margin: -0.15rem -0.35rem -0.15rem 0;
+    padding: 0; border-radius: 8px; background: #2da44e; color: white; font-weight: 800; font-size: 0.85rem;
+    opacity: 0; transition: opacity 0.12s;
+  }
+  .pcard:hover .pcard-done, .pcard:focus-visible .pcard-done { opacity: 1; }
+  .pcard-done:hover { background: #24873f; }
+  .pcard:hover .pcard-body { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+  .proj-toast { left: auto; width: 24rem; }
+}
 
 .visually-hidden {
   position: absolute;

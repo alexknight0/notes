@@ -9,8 +9,12 @@
 //                             image?, embedding?   (fact; image is a JPEG data URL)
 //                             archived?            (idea, thought)
 //                             tags?                (idea; array of strings) }
-//   users/{uid}/blocks/{id} { text, x, y, w, color, createdAt, updatedAt }  — Project board;
-//                             x, y, w are in grid cells (GRID px each), color is a BLOCK_COLORS key
+//   users/{uid}/projects/{id} { name, groups: [{id, name, color}], createdAt, updatedAt } — Projects;
+//                             groups are in priority order (top/left first), color is a GROUP_COLORS key
+//   users/{uid}/ptasks/{id}  { project, group, text, order, done, doneAt, createdAt, updatedAt } —
+//                             a project's tasks; order sorts tasks within a group (oldest first)
+//   users/{uid}/blocks/{id} { text, x, y, w, color, createdAt, updatedAt }  — the old Project board
+//                             (replaced by Projects on 2026-11-12; the docs are left in place, unused)
 //   users/{uid}/devices/{id} { token, timeZone, userAgent, updatedAt } — push reminders; one per
 //                             device with reminders on (id is random, kept in localStorage)
 //   notes/{uid}             { text }  — the original single note, migrated into scratch once.
@@ -57,8 +61,10 @@ let userRef = null;
 let notesCol = null;
 let unsubs = [];
 let notes = []; // [{id, ...data}]
-let blocksCol = null;
-let blocks = []; // project board blocks [{id, ...data}]
+let projectsCol = null;
+let ptasksCol = null;
+let projects = []; // [{id, ...data}]
+let ptasks = []; // tasks of every project [{id, ...data}]
 let userData = {};
 
 // ---------- helpers ----------
@@ -152,11 +158,11 @@ function el(tag, props = {}, ...children) {
 
 // ---------- views / routing ----------
 
-const VIEWS = ["scratch", "tasks", "ideas", "thoughts", "facts", "project"];
-// Ideas, thoughts, facts and the project board share the Library tab, which reopens whichever was used last.
-const LIBRARY = ["ideas", "thoughts", "facts", "project"];
+const VIEWS = ["scratch", "tasks", "ideas", "thoughts", "facts", "projects"];
+// Ideas, thoughts, facts and projects share the Library tab, which reopens whichever was used last.
+const LIBRARY = ["ideas", "thoughts", "facts", "projects"];
 const LIBRARY_KEY = "notes.libraryView"; // localStorage is shared by all of Alex's sites, so prefix it
-const OLD_HASHES = { urgent: "tasks" }; // old links and home-screen shortcuts
+const OLD_HASHES = { urgent: "tasks", project: "projects" }; // old links and home-screen shortcuts
 
 function currentView() {
   const hash = location.hash.slice(1);
@@ -182,22 +188,21 @@ function route() {
   $("header-add").hidden = !add;
   if (add) $("header-add").querySelector("span").textContent = add.word;
   if (view === "facts") startSemanticSearch();
-  if (view === "project") renderBoard(); // block heights can only be measured while visible
 }
 {
-  const saved = localStorage.getItem(LIBRARY_KEY);
+  const saved = OLD_HASHES[localStorage.getItem(LIBRARY_KEY)] ?? localStorage.getItem(LIBRARY_KEY);
   if (LIBRARY.includes(saved)) $("library-tab").href = `#${saved}`;
 }
 window.addEventListener("hashchange", route);
 
 // Desktop: the title-row Add button stands in for the view's dock (whose text box is hidden
-// there), so submitting the empty dock form opens the editor as usual.
+// there), so submitting the empty dock form opens the editor as usual. Projects has no entry:
+// on desktop each group column has its own "+ Add".
 const ADD_FORMS = {
   tasks: { form: "task-form", word: "task" },
   ideas: { form: "idea-form", word: "idea" },
   thoughts: { form: "thought-form", word: "thought" },
   facts: { form: "fact-form", word: "fact" },
-  project: { form: "block-form", word: "block" },
 };
 $("header-add").addEventListener("click", () => {
   const add = ADD_FORMS[currentView()];
@@ -822,331 +827,612 @@ async function addFromEditor(type, text, due, image, tags) {
   if (type === "fact") backfillEmbeddings();
 }
 
-// ---------- project board ----------
-// Blocks sit on a grid of GRID px cells. Drag a block to move it (it snaps to the nearest
-// cell on release), drag its corner to change its width, tap it to edit. Blocks can overlap;
-// the most recently changed one is drawn on top. Heights follow the text, rounded up to whole cells.
+// ---------- projects ----------
+// Each project has coloured groups in priority order (e.g. Now / Next / Later) holding to-do
+// tasks. Phone: one group fills the screen, the map at the top shows every group with its count;
+// swipe a task sideways to finish it, swipe empty space (or tap the map) to change group, long-press
+// a task and drop it on another group to move it. Wide screens with a mouse: every group side by
+// side; the ✓ button (or x) finishes a task, drag a task to another column to move it.
+// Finished tasks drop out of the groups into one list per project (▾ menu → Finished tasks).
 
-const GRID = 24; // px per grid cell
-const BLOCK_W = 7; // default width in cells
-const MIN_W = 3;
-const MAX_W = 40;
-const DRAG_SLOP = 5; // px the pointer must move before a press becomes a drag
-const BOARD_MARGIN = 6; // spare cells right of and below the last block, room to drag into
-const BLOCK_COLORS = { plain: "Plain", yellow: "Yellow", green: "Green", blue: "Blue", pink: "Pink", purple: "Purple" };
+const PROJECT_KEY = "notes.project"; // last-open project id (localStorage is shared by Alex's sites)
+const GROUP_KEY = "notes.projectGroup"; // last-open group id, for the phone's one-group view
+const GROUP_COLORS = {
+  red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", teal: "Teal",
+  blue: "Blue", purple: "Purple", pink: "Pink", grey: "Grey",
+};
+const DEFAULT_GROUPS = [["Now", "red"], ["Next", "orange"], ["Later", "blue"]];
+const SWIPE_DONE = 0.3; // a task swiped this fraction of its width is finished
+const SWIPE_GROUP = 60; // px of sideways swipe on empty space that changes group
+const GESTURE_SLOP = 8; // px a finger/mouse must move before a press counts as a gesture
+const LONG_PRESS_MS = 450; // hold a task this long (without moving) to pick it up
+const TOAST_MS = 5000;
+const MAP_BARS = 6; // at most this many task lines per group in the map
+const wideScreen = window.matchMedia("(min-width: 700px) and (pointer: fine)");
 
-const boardWrap = $("board-wrap");
-const board = $("board");
-let drag = null; // {id, el, mode: "move"|"resize", startX, startY, x, y, w, moved, pointerId}
+let projectId = localStorage.getItem(PROJECT_KEY);
+let groupId = localStorage.getItem(GROUP_KEY);
+let gesture = null; // the press/swipe/drag in progress on the board
+let renderPending = false; // a data update arrived mid-gesture; render when it ends
+let lastDone = null; // id of the task the Undo button would bring back
+let toastTimer = 0;
 
-const blockColor = (b) => (b.color in BLOCK_COLORS ? b.color : "plain");
-const cellsOf = (b, el) => ({
-  x: b.x ?? 0, y: b.y ?? 0, w: b.w ?? BLOCK_W,
-  h: el ? Math.round((el.offsetHeight + 4) / GRID) : 2,
+const shortId = () => crypto.randomUUID().slice(0, 8);
+const groupColor = (g) => (g?.color in GROUP_COLORS ? g.color : "grey");
+
+function sortedProjects() {
+  return [...projects].sort((a, b) => (toDate(a.createdAt)?.getTime() ?? 0) - (toDate(b.createdAt)?.getTime() ?? 0));
+}
+function currentProject() {
+  return projects.find((p) => p.id === projectId) ?? sortedProjects()[0] ?? null;
+}
+const groupsOf = (p) => p?.groups ?? [];
+function currentGroup(p) {
+  const groups = groupsOf(p);
+  return groups.find((g) => g.id === groupId) ?? groups[0] ?? null;
+}
+// A task whose group no longer exists (deleted on another device) shows in the first group.
+function groupOfTask(t, groups) {
+  return groups.some((g) => g.id === t.group) ? t.group : groups[0]?.id;
+}
+const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0) || (toDate(a.createdAt)?.getTime() ?? 0) - (toDate(b.createdAt)?.getTime() ?? 0);
+const projectTasks = (p) => ptasks.filter((t) => t.project === p.id);
+const openTasksIn = (p, gid) => projectTasks(p).filter((t) => !t.done && groupOfTask(t, groupsOf(p)) === gid).sort(byOrder);
+const finishedTasks = (p) => projectTasks(p).filter((t) => t.done)
+  .sort((a, b) => (toDate(b.doneAt)?.getTime() ?? 0) - (toDate(a.doneAt)?.getTime() ?? 0));
+
+function setProject(id) {
+  projectId = id;
+  localStorage.setItem(PROJECT_KEY, id);
+  groupId = null;
+  renderProjects();
+}
+function setGroup(id, enterFrom) {
+  groupId = id;
+  localStorage.setItem(GROUP_KEY, id);
+  renderProjects();
+  // Slide the new group in from the side it came from.
+  const col = document.querySelector(`#proj-board .pcol[data-group="${id}"]`);
+  if (enterFrom && col) {
+    col.classList.remove("enter-left", "enter-right");
+    void col.offsetWidth; // restart the animation
+    col.classList.add(enterFrom === "right" ? "enter-right" : "enter-left");
+  }
+}
+
+// How long a task's line in the map is: longer text, longer line.
+const barWidth = (t) => `${Math.min(100, 35 + (t.text?.length ?? 0) * 1.6)}%`;
+
+function renderProjects() {
+  if (gesture?.mode) { renderPending = true; return; } // don't yank a card out from under a finger
+  renderPending = false;
+  const p = currentProject();
+  for (const id of ["proj-head", "proj-map", "proj-board"]) $(id).hidden = !p;
+  $("proj-empty").hidden = Boolean(p);
+  $("proj-add").hidden = !p || !currentGroup(p);
+  if (!p) return;
+  projectId = p.id;
+  const groups = groupsOf(p);
+  const current = currentGroup(p);
+  groupId = current?.id ?? null;
+  const open = projectTasks(p).filter((t) => !t.done);
+  $("proj-name").textContent = p.name || "Untitled project";
+  $("proj-remaining").textContent = `${open.length} remaining`;
+
+  // The map: every group with its count and a short line per task; the one on screen is outlined.
+  $("proj-map").replaceChildren(
+    ...groups.map((g) => {
+      const tasks = openTasksIn(p, g.id);
+      const tile = el("button", {
+        type: "button", class: `ptile${g.id === groupId ? " on" : ""}`,
+        ariaLabel: `${g.name}: ${tasks.length} task${tasks.length === 1 ? "" : "s"}`,
+        onclick: () => setGroup(g.id, groups.indexOf(g) > groups.indexOf(current) ? "right" : "left"),
+      },
+      el("span", { class: "ptile-label" }, el("span", { class: "ptile-name", textContent: g.name }), el("span", { textContent: tasks.length })),
+      el("span", { class: "ptile-bars" }, ...tasks.slice(0, MAP_BARS).map((t) => {
+        const bar = el("i");
+        bar.style.width = barWidth(t);
+        return bar;
+      })));
+      tile.dataset.group = g.id;
+      tile.dataset.g = groupColor(g);
+      if (g.id === groupId) tile.ariaCurrent = "true";
+      return tile;
+    }),
+    el("button", { type: "button", class: "ptile ptile-add", textContent: "+", title: "New group", ariaLabel: "New group", onclick: () => openGroupEditor(null) }),
+  );
+
+  // The columns: all shown side by side on wide screens, only the current one on phones.
+  $("proj-board").replaceChildren(...groups.map((g) => {
+    const tasks = openTasksIn(p, g.id);
+    const list = el("ul", { class: "plist" }, ...tasks.map(taskCard));
+    if (!tasks.length) list.append(el("li", { class: "pempty", textContent: "Nothing here" }));
+    const col = el("section", { class: `pcol${g.id === groupId ? " current" : ""}`, ariaLabel: g.name },
+      el("h2", { class: "pcol-head" },
+        el("span", { class: "pcol-name", textContent: g.name }),
+        el("span", { class: "pcol-count", textContent: tasks.length }),
+        el("button", { type: "button", class: "pcol-more", textContent: "···", title: "Edit group", ariaLabel: `Edit group ${g.name}`, onclick: () => openGroupEditor(g) })),
+      list,
+      el("button", { type: "button", class: "pcol-add", textContent: "+ Add", onclick: () => openTaskEditor({ group: g.id }) }));
+    col.dataset.group = g.id;
+    col.dataset.g = groupColor(g);
+    return col;
+  }));
+}
+
+function taskCard(t) {
+  const card = el("li", { class: "pcard", tabIndex: 0, ariaLabel: `${t.text}. Enter edits, x finishes.` },
+    el("span", { class: "pcard-under", ariaHidden: "true", textContent: "✓ Done" }),
+    el("div", { class: "pcard-body" },
+      el("span", { class: "pcard-text", textContent: t.text }),
+      el("button", {
+        type: "button", class: "pcard-done", textContent: "✓", title: "Done (x)", ariaLabel: "Done",
+        onclick: (e) => { e.stopPropagation(); finishTask(t); },
+      })));
+  card.dataset.id = t.id;
+  card.addEventListener("keydown", (e) => taskKey(e, t));
+  card.addEventListener("contextmenu", (e) => { if (e.pointerType !== "mouse") e.preventDefault(); }); // long-press is ours
+  return card;
+}
+
+// ----- finishing, moving, undo -----
+
+async function finishTask(t) {
+  lastDone = t.id;
+  showToast();
+  await guard(updateDoc(doc(ptasksCol, t.id), { done: true, doneAt: serverTimestamp(), updatedAt: serverTimestamp() }), "finish the task");
+}
+async function unfinishTask(id) {
+  const t = ptasks.find((x) => x.id === id);
+  if (!t) return;
+  // Back at the end of its group, or the first group if its own has gone.
+  const p = projects.find((x) => x.id === t.project);
+  await guard(updateDoc(doc(ptasksCol, id), {
+    done: false, doneAt: null, group: groupOfTask(t, groupsOf(p)) ?? t.group, order: Date.now(), updatedAt: serverTimestamp(),
+  }), "put the task back");
+}
+function moveTask(t, gid) {
+  if (!gid || t.group === gid) return;
+  // Shown straight away, before Firestore's own update arrives.
+  Object.assign(t, { group: gid, order: Date.now() });
+  renderProjects();
+  guard(updateDoc(doc(ptasksCol, t.id), { group: gid, order: t.order, updatedAt: serverTimestamp() }), "move the task");
+}
+
+function showToast() {
+  $("proj-toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, TOAST_MS);
+}
+function hideToast() {
+  clearTimeout(toastTimer);
+  $("proj-toast").hidden = true;
+}
+$("proj-toast-undo").addEventListener("click", () => {
+  hideToast();
+  if (lastDone) unfinishTask(lastDone);
+  lastDone = null;
 });
+$("proj-toast-finished").addEventListener("click", () => { hideToast(); openFinished(); });
 
-function placeBlockEl(el, x, y, w) {
-  el.style.left = `${x * GRID + 2}px`;
-  el.style.top = `${y * GRID + 2}px`;
-  el.style.width = `${w * GRID - 4}px`;
-}
-
-// Round a block's height up to whole cells (minus the 4px gap) so its edges sit on grid lines.
-function snapHeight(el) {
-  el.style.height = "";
-  el.style.height = `${Math.max(2, Math.ceil((el.offsetHeight + 4) / GRID)) * GRID - 4}px`;
-}
-
-function renderBoard() {
-  const byId = new Map([...board.querySelectorAll(".block")].map((el) => [el.dataset.id, el]));
-  const order = [...blocks].sort((a, b) => (toDate(a.updatedAt)?.getTime() ?? 0) - (toDate(b.updatedAt)?.getTime() ?? 0));
-  const els = order.map((b) => {
-    let el = byId.get(b.id);
-    if (!el) {
-      el = blockEl(b.id);
-    }
-    el.querySelector(".block-text").textContent = b.text || " ";
-    el.dataset.color = blockColor(b);
-    el.ariaLabel = `${b.text}. Arrow keys move, Enter edits.`;
-    if (drag?.id !== b.id) placeBlockEl(el, b.x ?? 0, b.y ?? 0, b.w ?? BLOCK_W);
-    return el;
-  });
-  // Stacking order = DOM order. Reordering is skipped mid-drag: moving the held block in the
-  // DOM would drop its pointer capture (CSS keeps it on top meanwhile).
-  for (const [id, el] of byId) if (!els.includes(el)) { el.remove(); byId.delete(id); }
-  if (drag) for (const el of els) { if (!el.isConnected) board.append(el); }
-  else {
-    const focused = document.activeElement;
-    const current = [...board.querySelectorAll(".block")];
-    if (els.some((el, i) => current[i] !== el)) board.append(...els);
-    if (focused?.classList.contains("block") && document.activeElement !== focused) focused.focus({ preventScroll: true });
-  }
-  for (const el of els) if (drag?.id !== el.dataset.id || drag.mode === "resize") snapHeight(el);
-  $("board-empty").hidden = blocks.length > 0;
-  sizeBoard();
-}
-
-// The board is as big as its blocks plus a margin, and at least as big as the visible area.
-function sizeBoard(extra) {
-  let cols = 0;
-  let rows = 0;
-  for (const el of board.querySelectorAll(".block")) {
-    const b = blocks.find((x) => x.id === el.dataset.id);
-    if (!b) continue;
-    const c = cellsOf(b, el);
-    cols = Math.max(cols, c.x + c.w);
-    rows = Math.max(rows, c.y + c.h);
-  }
-  if (extra) { cols = Math.max(cols, extra.x + extra.w); rows = Math.max(rows, extra.y + extra.h); }
-  board.style.width = `${Math.max((cols + BOARD_MARGIN) * GRID, Math.floor(boardWrap.clientWidth / GRID) * GRID)}px`;
-  board.style.height = `${Math.max((rows + BOARD_MARGIN) * GRID, Math.floor(boardWrap.clientHeight / GRID) * GRID)}px`;
-}
-window.addEventListener("resize", () => { if (!$("view-project").hidden) sizeBoard(); });
-
-function blockEl(id) {
-  const node = el("div", { class: "block", tabIndex: 0 },
-    el("div", { class: "block-text" }),
-    el("div", { class: "block-resize", title: "Drag to resize", ariaHidden: "true" }));
-  node.dataset.id = id;
-  node.addEventListener("pointerdown", startBlockDrag);
-  node.addEventListener("keydown", blockKey);
-  return node;
-}
-
-function startBlockDrag(e) {
-  if (e.button !== 0 || drag) return;
-  const el = e.currentTarget;
-  const b = blocks.find((x) => x.id === el.dataset.id);
-  if (!b) return;
-  e.preventDefault(); // no text selection; focus is moved by hand below
-  el.focus({ preventScroll: true });
-  el.setPointerCapture(e.pointerId);
-  const { x, y, w } = cellsOf(b);
-  drag = {
-    id: b.id, el, mode: e.target.closest(".block-resize") ? "resize" : "move", pointerId: e.pointerId,
-    startX: e.clientX, startY: e.clientY, scroll0: [boardWrap.scrollLeft, boardWrap.scrollTop],
-    x0: x, y0: y, w0: w, x, y, w, moved: false, lastEvent: e,
-  };
-  el.addEventListener("pointermove", moveBlockDrag);
-  el.addEventListener("pointerup", endBlockDrag);
-  el.addEventListener("pointercancel", endBlockDrag);
-}
-
-function moveBlockDrag(e) {
-  if (!drag || e.pointerId !== drag.pointerId) return;
-  drag.lastEvent = e;
-  updateDrag();
-  if (drag.moved) autoScroll();
-}
-
-// Where the block would land, from the pointer position and how far the board has scrolled.
-function updateDrag() {
-  const e = drag.lastEvent;
-  const dx = e.clientX - drag.startX + boardWrap.scrollLeft - drag.scroll0[0];
-  const dy = e.clientY - drag.startY + boardWrap.scrollTop - drag.scroll0[1];
-  if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_SLOP) return;
-  if (!drag.moved) {
-    drag.moved = true;
-    drag.el.classList.add(drag.mode === "move" ? "dragging" : "resizing");
-    board.classList.add("active");
-  }
-  const el = drag.el;
-  if (drag.mode === "move") {
-    // The block follows the pointer exactly; the shadow cell shows where it will snap.
-    drag.x = Math.max(0, Math.round(drag.x0 + dx / GRID));
-    drag.y = Math.max(0, Math.round(drag.y0 + dy / GRID));
-    el.style.left = `${Math.max(0, drag.x0 * GRID + dx) + 2}px`;
-    el.style.top = `${Math.max(0, drag.y0 * GRID + dy) + 2}px`;
-  } else {
-    drag.w = Math.min(MAX_W, Math.max(MIN_W, Math.round(drag.w0 + dx / GRID)));
-    placeBlockEl(el, drag.x, drag.y, drag.w);
-    snapHeight(el);
-  }
-  showGhost(drag.x, drag.y, drag.w, Math.round((el.offsetHeight + 4) / GRID));
-  sizeBoard({ x: drag.x, y: drag.y, w: drag.w, h: Math.round((el.offsetHeight + 4) / GRID) });
-}
-
-function showGhost(x, y, w, h) {
-  let ghost = $("block-ghost");
-  if (!ghost) {
-    ghost = el("div", { id: "block-ghost", class: "block-ghost" });
-    board.prepend(ghost);
-  }
-  ghost.style.left = `${x * GRID}px`;
-  ghost.style.top = `${y * GRID}px`;
-  ghost.style.width = `${w * GRID}px`;
-  ghost.style.height = `${h * GRID}px`;
-}
-
-// Scroll the board while a block is held near its edge, so blocks can go beyond the visible area.
-let scrollFrame = 0;
-function autoScroll() {
-  if (scrollFrame) return;
-  const step = () => {
-    scrollFrame = 0;
-    if (!drag?.moved) return;
-    const e = drag.lastEvent;
-    const r = boardWrap.getBoundingClientRect();
-    const edge = 40;
-    const speed = (d) => (d < edge ? Math.ceil((edge - d) / 4) : 0);
-    const sx = speed(r.right - e.clientX) - speed(e.clientX - r.left);
-    const sy = speed(r.bottom - e.clientY) - speed(e.clientY - r.top);
-    if (!sx && !sy) return;
-    boardWrap.scrollBy(sx, sy);
-    updateDrag();
-    scrollFrame = requestAnimationFrame(step);
-  };
-  scrollFrame = requestAnimationFrame(step);
-}
-
-function endBlockDrag(e) {
-  if (!drag || e.pointerId !== drag.pointerId) return;
-  const d = drag;
-  drag = null;
-  cancelAnimationFrame(scrollFrame);
-  scrollFrame = 0;
-  d.el.removeEventListener("pointermove", moveBlockDrag);
-  d.el.removeEventListener("pointerup", endBlockDrag);
-  d.el.removeEventListener("pointercancel", endBlockDrag);
-  d.el.classList.remove("dragging", "resizing");
-  board.classList.remove("active");
-  $("block-ghost")?.remove();
-  const b = blocks.find((x) => x.id === d.id);
-  if (!d.moved) {
-    renderBoard();
-    if (e.type === "pointerup" && b) openBlockEditor(b);
-    return;
-  }
-  if (!b || e.type === "pointercancel" || (d.x === d.x0 && d.y === d.y0 && d.w === d.w0)) {
-    renderBoard();
-    return;
-  }
-  moveBlock(b, { x: d.x, y: d.y, w: d.w });
-}
-
-// Save a new position/width; shown straight away, before Firestore's own update arrives.
-function moveBlock(b, pos) {
-  Object.assign(b, pos, { updatedAt: Date.now() });
-  renderBoard();
-  guard(updateDoc(doc(blocksCol, b.id), { ...pos, updatedAt: serverTimestamp() }), "move block");
-}
-
-// Keyboard: arrows move the focused block a cell (Shift = 4 cells), Enter edits, Delete deletes.
-function blockKey(e) {
-  const b = blocks.find((x) => x.id === e.currentTarget.dataset.id);
-  if (!b) return;
-  const n = e.shiftKey ? 4 : 1;
-  const moves = { ArrowLeft: [-n, 0], ArrowRight: [n, 0], ArrowUp: [0, -n], ArrowDown: [0, n] };
-  if (moves[e.key]) {
+// Keyboard on a focused task: x finishes, Enter edits, [ and ] move it to the previous/next group.
+function taskKey(e, t) {
+  if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+  const p = currentProject();
+  const groups = groupsOf(p);
+  const i = groups.findIndex((g) => g.id === groupOfTask(t, groups));
+  if (e.key === "x") {
     e.preventDefault();
-    const [dx, dy] = moves[e.key];
-    const { x, y } = cellsOf(b);
-    if (Math.max(0, x + dx) !== x || Math.max(0, y + dy) !== y) moveBlock(b, { x: Math.max(0, x + dx), y: Math.max(0, y + dy) });
-    requestAnimationFrame(() => board.querySelector(`[data-id="${b.id}"]`)?.focus());
+    focusNeighbour(e.currentTarget);
+    finishTask(t);
   } else if (e.key === "Enter") {
     e.preventDefault();
-    openBlockEditor(b);
-  } else if (e.key === "Delete" || e.key === "Backspace") {
+    openTaskEditor({ task: t });
+  } else if ((e.key === "[" || e.key === "]") && groups.length > 1) {
     e.preventDefault();
-    if (confirm("Delete this block?")) guard(deleteDoc(doc(blocksCol, b.id)), "delete block");
+    const target = groups[i + (e.key === "]" ? 1 : -1)];
+    if (!target) return;
+    moveTask(t, target.id);
+    if (!wideScreen.matches) setGroup(target.id, e.key === "]" ? "right" : "left");
+    requestAnimationFrame(() => document.querySelector(`.pcard[data-id="${t.id}"]`)?.focus());
+  } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const cards = [...e.currentTarget.parentElement.querySelectorAll(".pcard")];
+    cards[cards.indexOf(e.currentTarget) + (e.key === "ArrowDown" ? 1 : -1)]?.focus();
   }
 }
-
-// First free spot for a new block, starting at the top-left of the visible part of the board.
-function freeSpot(w, h) {
-  const taken = [...board.querySelectorAll(".block")].map((el) => {
-    const b = blocks.find((x) => x.id === el.dataset.id);
-    return b ? cellsOf(b, el) : null;
-  }).filter(Boolean);
-  const overlaps = (x, y) => taken.some((t) => x < t.x + t.w && t.x < x + w && y < t.y + t.h && t.y < y + h);
-  const x0 = Math.ceil(boardWrap.scrollLeft / GRID) + 1;
-  const y0 = Math.ceil(boardWrap.scrollTop / GRID) + 1;
-  const cols = Math.max(w, Math.floor(boardWrap.clientWidth / GRID) - 2);
-  for (let y = y0; y < y0 + 400; y++) {
-    for (let x = x0; x + w <= x0 + cols; x++) if (!overlaps(x, y)) return { x, y };
-  }
-  return { x: x0, y: y0 };
+// After finishing the focused task, keep the keyboard going with the next one.
+function focusNeighbour(card) {
+  const next = card.nextElementSibling?.matches(".pcard") ? card.nextElementSibling : card.previousElementSibling;
+  if (next?.dataset.id) requestAnimationFrame(() => document.querySelector(`.pcard[data-id="${next.dataset.id}"]`)?.focus());
 }
-
-async function addBlock(text, color = "plain") {
-  if (!text) return;
-  const w = Math.min(BLOCK_W, Math.max(MIN_W, Math.floor(boardWrap.clientWidth / GRID) - 2));
-  const { x, y } = freeSpot(w, 2);
-  await guard(addDoc(blocksCol, {
-    text, x, y, w, color, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
-  }), "add block");
-}
-
-$("block-form").addEventListener("submit", async (e) => {
+// z (not while typing) = Undo, while the Undo bar is up.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "z" || e.ctrlKey || e.metaKey || e.altKey || currentView() !== "projects") return;
+  if (e.target.matches("input, textarea") || document.querySelector("dialog[open]") || $("proj-toast").hidden) return;
   e.preventDefault();
-  const text = $("block-text").value.trim();
-  if (!text) {
-    openBlockEditor({ text: "", color: "plain" }); // empty Add opens the bigger editor
+  $("proj-toast-undo").click();
+});
+
+// ----- touch and mouse gestures on the board -----
+// Touch: sideways on a task = finish it; sideways on empty space = next/previous group; hold a
+// task still for LONG_PRESS_MS = pick it up (drop it on a group in the map). Vertical = scroll.
+// Mouse: press and move a task = drag it to another column; click = edit.
+
+const projBoard = $("proj-board");
+
+// Pinch-zoomed: no swipe gestures, so a sideways swipe pans the zoomed page (see the scratch pad).
+const updateProjZoom = () => $("view-projects").classList.toggle("zoomed", zoomed());
+window.visualViewport?.addEventListener("resize", updateProjZoom);
+
+projBoard.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || gesture || e.target.closest("button")) return;
+  if (e.pointerType !== "mouse" && zoomed()) { // a tap still opens the task
+    const card = e.target.closest(".pcard");
+    const t = card && ptasks.find((x) => x.id === card.dataset.id);
+    if (t) gesture = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, card, task: t, mouse: false, mode: null, zoomTap: true };
     return;
   }
-  $("block-text").value = "";
-  $("block-text").focus(); // keep the keyboard up for the next one
-  await addBlock(text);
+  const card = e.target.closest(".pcard");
+  const mouse = e.pointerType === "mouse";
+  if (mouse && !card) return; // no group swiping with a mouse; every column is on screen
+  const t = card && ptasks.find((x) => x.id === card.dataset.id);
+  if (card && !t) return;
+  gesture = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, card, task: t, mouse, mode: null };
+  if (card && !mouse) gesture.timer = setTimeout(() => startTaskDrag(), LONG_PRESS_MS);
 });
-// Blocks are usually short: Enter adds one, Shift+Enter starts a new line.
-$("block-text").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-    e.preventDefault();
-    e.target.form.requestSubmit();
+
+window.addEventListener("pointermove", (e) => {
+  if (!gesture || e.pointerId !== gesture.pointerId) return;
+  const g = gesture;
+  g.x = e.clientX;
+  g.y = e.clientY;
+  const dx = g.x - g.x0;
+  const dy = g.y - g.y0;
+  if (!g.mode) {
+    if (Math.hypot(dx, dy) < GESTURE_SLOP) return;
+    clearTimeout(g.timer);
+    if (g.zoomTap) { g.mode = "none"; return; }
+    if (g.mouse) startTaskDrag();
+    else if (Math.abs(dx) > Math.abs(dy)) {
+      g.mode = g.card ? "swipe" : wideScreen.matches ? "none" : "page";
+      if (g.mode === "swipe") g.card.classList.add("swiping");
+    } else g.mode = "scroll"; // the browser scrolls the list (touch-action: pan-y)
+  }
+  if (g.mode === "swipe") {
+    g.card.dataset.dir = dx > 0 ? "right" : "left";
+    g.card.querySelector(".pcard-body").style.transform = `translateX(${dx}px)`;
+    g.card.classList.toggle("armed", Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE);
+  } else if (g.mode === "page") {
+    const col = projBoard.querySelector(".pcol.current");
+    if (col) col.style.transform = `translateX(${dx * 0.4}px)`;
+  } else if (g.mode === "drag") {
+    moveDragGhost();
   }
 });
 
-// Block editor dialog: text, colour, delete. A block without an id is a new block.
-const blockDialog = $("block-edit");
-let editingBlock = null; // {block, color, start}
-$("block-colors").replaceChildren(...Object.entries(BLOCK_COLORS).map(([key, label]) => el("button", {
-  type: "button", class: "swatch", title: label, ariaLabel: label, role: "radio",
-  onclick: () => { editingBlock.color = key; syncSwatches(); },
-})));
-[...$("block-colors").children].forEach((b, i) => { b.dataset.color = Object.keys(BLOCK_COLORS)[i]; });
+// While a task is picked up on a touch screen, the finger moves it rather than scrolling the list.
+projBoard.addEventListener("touchmove", (e) => { if (gesture?.mode === "drag") e.preventDefault(); }, { passive: false });
 
-function syncSwatches() {
-  for (const s of $("block-colors").children) s.ariaChecked = String(s.dataset.color === editingBlock.color);
+function endGesture(e) {
+  if (!gesture || e.pointerId !== gesture.pointerId) return;
+  const g = gesture;
+  gesture = null;
+  clearTimeout(g.timer);
+  const dx = g.x - g.x0;
+  const cancelled = e.type === "pointercancel";
+  if (!g.mode && g.card && !cancelled) {
+    openTaskEditor({ task: g.task }); // a tap or click
+  } else if (g.mode === "swipe") {
+    const body = g.card.querySelector(".pcard-body");
+    if (!cancelled && Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE) {
+      // Slide the rest of the way off, then finish it.
+      body.style.transition = "transform 0.18s ease-in";
+      body.style.transform = `translateX(${Math.sign(dx) * g.card.offsetWidth * 1.1}px)`;
+      g.card.classList.add("leaving");
+      setTimeout(() => finishTask(g.task), 160);
+    } else {
+      body.style.transition = "transform 0.18s ease-out";
+      body.style.transform = "";
+      setTimeout(() => g.card.classList.remove("swiping", "armed"), 180);
+    }
+  } else if (g.mode === "page") {
+    const col = projBoard.querySelector(".pcol.current");
+    if (col) col.style.transform = "";
+    const groups = groupsOf(currentProject());
+    const i = groups.findIndex((x) => x.id === groupId);
+    const next = !cancelled && Math.abs(dx) > SWIPE_GROUP ? groups[i + (dx < 0 ? 1 : -1)] : null;
+    if (next) setGroup(next.id, dx < 0 ? "right" : "left");
+  } else if (g.mode === "drag") {
+    endTaskDrag(g, cancelled);
+  }
+  if (renderPending) renderProjects();
 }
-const blockEditorState = () => JSON.stringify([$("block-edit-text").value, editingBlock.color]);
+window.addEventListener("pointerup", endGesture);
+window.addEventListener("pointercancel", endGesture);
 
-function openBlockEditor(block) {
-  editingBlock = { block, color: blockColor(block) };
-  blockDialog.returnValue = "";
-  $("block-edit-text").value = block.text ?? "";
-  $("block-delete").hidden = !block.id;
-  $("block-save").textContent = block.id ? "Save" : "Add";
-  syncSwatches();
-  editingBlock.start = blockEditorState();
-  blockDialog.showModal();
-  if (!block.id) $("block-edit-text").focus();
+// Pick up a task: a floating copy follows the pointer; groups in the map and columns are drop targets.
+function startTaskDrag() {
+  const g = gesture;
+  if (!g?.card || g.mode) return;
+  g.mode = "drag";
+  navigator.vibrate?.(15);
+  const r = g.card.getBoundingClientRect();
+  g.offset = [g.x0 - r.left, g.y0 - r.top];
+  g.ghost = g.card.cloneNode(true);
+  g.ghost.className = "pcard pdrag-ghost";
+  g.ghost.style.width = `${r.width}px`;
+  document.body.append(g.ghost);
+  g.card.classList.add("lifted");
+  $("view-projects").classList.add("dragging");
+  moveDragGhost();
 }
-function cancelBlockEditor() {
-  if (!editingBlock || blockEditorState() === editingBlock.start || confirm("Discard your changes?")) blockDialog.close("cancel");
+function dropTargetAt(x, y) {
+  const hit = document.elementFromPoint(x, y)?.closest("[data-group]");
+  return hit && $("view-projects").contains(hit) ? hit : null;
 }
-blockDialog.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !e.isComposing) { e.preventDefault(); cancelBlockEditor(); }
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); blockDialog.close("save"); }
+function moveDragGhost() {
+  const g = gesture;
+  g.ghost.style.left = `${g.x - g.offset[0]}px`;
+  g.ghost.style.top = `${g.y - g.offset[1]}px`;
+  const target = dropTargetAt(g.x, g.y);
+  for (const n of document.querySelectorAll("#view-projects .drop-over")) if (n !== target) n.classList.remove("drop-over");
+  target?.classList.add("drop-over");
+}
+function endTaskDrag(g, cancelled) {
+  g.ghost.remove();
+  g.card.classList.remove("lifted");
+  $("view-projects").classList.remove("dragging");
+  for (const n of document.querySelectorAll("#view-projects .drop-over")) n.classList.remove("drop-over");
+  const target = cancelled ? null : dropTargetAt(g.x, g.y);
+  if (target) moveTask(g.task, target.dataset.group);
+}
+
+// ----- the "+ Add" / task editor dialog -----
+// New tasks go into the group they were added from (no group picker, to keep it simple);
+// editing an existing task can move it to another group.
+
+const ptaskDialog = $("ptask-edit");
+let editingTask = null; // {task?, group, start}
+
+function openTaskEditor({ task = null, group = null }) {
+  const p = currentProject();
+  if (!p) return;
+  const groups = groupsOf(p);
+  editingTask = { task, group: task ? groupOfTask(task, groups) : group ?? currentGroup(p)?.id };
+  if (!editingTask.group) return;
+  const g = groups.find((x) => x.id === editingTask.group);
+  ptaskDialog.returnValue = "";
+  $("ptask-title").replaceChildren(task ? "Edit task" : "New task in ", task ? "" : el("span", { class: "gname", textContent: g.name }));
+  $("ptask-title").dataset.g = groupColor(g);
+  $("ptask-text").value = task?.text ?? "";
+  $("ptask-delete").hidden = !task;
+  $("ptask-save").textContent = task ? "Save" : "Add";
+  $("ptask-groups").hidden = !task || groups.length < 2;
+  syncTaskGroups();
+  editingTask.start = taskEditorState();
+  ptaskDialog.showModal();
+  if (!task) $("ptask-text").focus();
+}
+function syncTaskGroups() {
+  const groups = groupsOf(currentProject());
+  $("ptask-groups").replaceChildren(...groups.map((g) => {
+    const chip = el("button", {
+      type: "button", class: `chip pchip${g.id === editingTask.group ? " active" : ""}`, role: "radio",
+      ariaChecked: String(g.id === editingTask.group), textContent: g.name,
+      onclick: () => { editingTask.group = g.id; syncTaskGroups(); },
+    });
+    chip.dataset.g = groupColor(g);
+    return chip;
+  }));
+}
+const taskEditorState = () => JSON.stringify([$("ptask-text").value, editingTask.group]);
+
+async function addTask(group, text) {
+  await guard(addDoc(ptasksCol, {
+    project: projectId, group, text, order: Date.now(), done: false, doneAt: null,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }), "add the task");
+}
+// Enter adds the task and clears the box for the next one (new tasks); Shift+Enter is a new line.
+$("ptask-text").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  const text = $("ptask-text").value.trim();
+  if (editingTask?.task) { ptaskDialog.close("save"); return; }
+  if (!text) return;
+  $("ptask-text").value = "";
+  editingTask.start = taskEditorState();
+  addTask(editingTask.group, text);
 });
-blockDialog.addEventListener("cancel", (e) => { e.preventDefault(); cancelBlockEditor(); });
-$("block-delete").addEventListener("click", async () => {
-  if (!confirm("Delete this block?")) return;
-  const { block } = editingBlock;
-  blockDialog.close();
-  await guard(deleteDoc(doc(blocksCol, block.id)), "delete block");
+function cancelTaskEditor() {
+  if (!editingTask || taskEditorState() === editingTask.start || confirm("Discard your changes?")) ptaskDialog.close("cancel");
+}
+ptaskDialog.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing) { e.preventDefault(); cancelTaskEditor(); }
 });
-blockDialog.addEventListener("close", async () => {
-  if (blockDialog.returnValue !== "save" || !editingBlock) return;
-  blockDialog.returnValue = "";
-  const { block, color } = editingBlock;
-  const text = $("block-edit-text").value.trim();
-  if (!block.id) {
-    await addBlock(text, color);
+ptaskDialog.addEventListener("cancel", (e) => { e.preventDefault(); cancelTaskEditor(); });
+$("ptask-delete").addEventListener("click", async () => {
+  if (!confirm("Delete this task?")) return;
+  const { task } = editingTask;
+  ptaskDialog.close();
+  await guard(deleteDoc(doc(ptasksCol, task.id)), "delete the task");
+});
+ptaskDialog.addEventListener("close", async () => {
+  if (ptaskDialog.returnValue !== "save" || !editingTask) return;
+  ptaskDialog.returnValue = "";
+  const { task, group } = editingTask;
+  const text = $("ptask-text").value.trim();
+  if (!task) {
+    if (text) await addTask(group, text);
     return;
   }
-  if (!text) return; // an emptied block is kept; Delete removes it
-  await guard(updateDoc(doc(blocksCol, block.id), { text, color, updatedAt: serverTimestamp() }), "save block");
+  if (!text) return; // an emptied task is kept; Delete removes it
+  const changes = { text, updatedAt: serverTimestamp() };
+  if (group !== task.group) Object.assign(changes, { group, order: Date.now() });
+  await guard(updateDoc(doc(ptasksCol, task.id), changes), "save the task");
 });
+
+$("proj-add").addEventListener("click", () => openTaskEditor({}));
+
+// ----- group editor: title and colour -----
+
+const pgroupDialog = $("pgroup-edit");
+let editingGroup = null; // {group (null = new), color, start}
+$("pgroup-colors").replaceChildren(...Object.entries(GROUP_COLORS).map(([key, label]) => {
+  const s = el("button", {
+    type: "button", class: "swatch", title: label, ariaLabel: label, role: "radio",
+    onclick: () => { editingGroup.color = key; syncGroupSwatches(); },
+  });
+  s.dataset.g = key;
+  return s;
+}));
+function syncGroupSwatches() {
+  for (const s of $("pgroup-colors").children) s.ariaChecked = String(s.dataset.g === editingGroup.color);
+}
+const groupEditorState = () => JSON.stringify([$("pgroup-name").value, editingGroup.color]);
+
+function openGroupEditor(group) {
+  const groups = groupsOf(currentProject());
+  // A new group gets the first colour no group is using yet.
+  const unused = Object.keys(GROUP_COLORS).find((c) => !groups.some((g) => g.color === c)) ?? "grey";
+  editingGroup = { group, color: group ? groupColor(group) : unused };
+  pgroupDialog.returnValue = "";
+  $("pgroup-title").textContent = group ? "Edit group" : "New group";
+  $("pgroup-name").value = group?.name ?? "";
+  $("pgroup-delete").hidden = !group || groups.length < 2;
+  $("pgroup-save").textContent = group ? "Save" : "Add";
+  syncGroupSwatches();
+  editingGroup.start = groupEditorState();
+  pgroupDialog.showModal();
+  if (!group) $("pgroup-name").focus();
+}
+function cancelGroupEditor() {
+  if (!editingGroup || groupEditorState() === editingGroup.start || confirm("Discard your changes?")) pgroupDialog.close("cancel");
+}
+pgroupDialog.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.isComposing) { e.preventDefault(); cancelGroupEditor(); }
+});
+pgroupDialog.addEventListener("cancel", (e) => { e.preventDefault(); cancelGroupEditor(); });
+const saveGroups = (p, groups) => guard(updateDoc(doc(projectsCol, p.id), { groups, updatedAt: serverTimestamp() }), "save the groups");
+
+pgroupDialog.addEventListener("close", async () => {
+  if (pgroupDialog.returnValue !== "save" || !editingGroup) return;
+  pgroupDialog.returnValue = "";
+  const p = currentProject();
+  const name = $("pgroup-name").value.trim();
+  if (!p || !name) return;
+  const { group, color } = editingGroup;
+  if (group) {
+    await saveGroups(p, groupsOf(p).map((g) => (g.id === group.id ? { ...g, name, color } : g)));
+  } else {
+    const id = shortId();
+    p.groups = [...groupsOf(p), { id, name, color }];
+    setGroup(id, "right");
+    await saveGroups(p, p.groups);
+  }
+});
+
+// Deleting a group moves its tasks (to do and finished) into the group next to it.
+$("pgroup-delete").addEventListener("click", async () => {
+  const p = currentProject();
+  const groups = groupsOf(p);
+  const { group } = editingGroup;
+  const i = groups.findIndex((g) => g.id === group.id);
+  const heir = groups[i + 1] ?? groups[i - 1];
+  const tasks = projectTasks(p).filter((t) => groupOfTask(t, groups) === group.id);
+  const open = tasks.filter((t) => !t.done).length;
+  const question = open
+    ? `Delete “${group.name}”? Its ${open} task${open === 1 ? "" : "s"} will move to “${heir.name}”.`
+    : `Delete “${group.name}”?`;
+  if (!confirm(question)) return;
+  pgroupDialog.close();
+  for (const t of tasks) await guard(updateDoc(doc(ptasksCol, t.id), { group: heir.id, updatedAt: serverTimestamp() }), "move the tasks");
+  if (groupId === group.id) setGroup(heir.id);
+  await saveGroups(p, groups.filter((g) => g.id !== group.id));
+});
+
+// ----- projects: the ▾ menu -----
+
+const projMenu = $("proj-menu");
+$("proj-pick").addEventListener("click", () => {
+  const p = currentProject();
+  $("proj-menu-list").replaceChildren(...sortedProjects().map((x) => {
+    const left = projectTasks(x).filter((t) => !t.done).length;
+    return el("button", {
+      type: "button", class: `menu-item${x.id === p?.id ? " active" : ""}`,
+      onclick: () => { projMenu.close(); setProject(x.id); },
+    }, el("span", { textContent: x.name || "Untitled project" }), el("small", { textContent: left }));
+  }));
+  $("proj-menu-finished-n").textContent = p ? finishedTasks(p).length : "";
+  projMenu.showModal();
+});
+// A tap outside the menu (on the backdrop) closes it.
+projMenu.addEventListener("click", (e) => { if (e.target === projMenu) projMenu.close(); });
+$("proj-menu-finished").addEventListener("click", () => { projMenu.close(); openFinished(); });
+$("proj-menu-rename").addEventListener("click", async () => {
+  projMenu.close();
+  const p = currentProject();
+  const name = prompt("Project name", p.name)?.trim();
+  if (name && name !== p.name) await guard(updateDoc(doc(projectsCol, p.id), { name, updatedAt: serverTimestamp() }), "rename the project");
+});
+$("proj-menu-new").addEventListener("click", () => { projMenu.close(); createProject(); });
+$("proj-menu-delete").addEventListener("click", async () => {
+  projMenu.close();
+  const p = currentProject();
+  const tasks = projectTasks(p);
+  if (!confirm(`Delete “${p.name}” and its ${tasks.length} task${tasks.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+  projectId = null;
+  for (const t of tasks) await guard(deleteDoc(doc(ptasksCol, t.id)), "delete the tasks");
+  await guard(deleteDoc(doc(projectsCol, p.id)), "delete the project");
+});
+$("proj-create").addEventListener("click", createProject);
+
+async function createProject() {
+  const name = prompt("Project name")?.trim();
+  if (!name) return;
+  const groups = DEFAULT_GROUPS.map(([n, color]) => ({ id: shortId(), name: n, color }));
+  const ref = await guard(addDoc(projectsCol, { name, groups, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }), "create the project");
+  setProject(ref.id);
+}
+
+// ----- finished tasks: one list per project, newest first -----
+
+const doneDialog = $("proj-done");
+function openFinished() {
+  renderFinished();
+  doneDialog.showModal();
+}
+function renderFinished() {
+  const p = currentProject();
+  if (!p) return;
+  const done = finishedTasks(p);
+  const groups = groupsOf(p);
+  const today = new Date().setHours(0, 0, 0, 0);
+  $("proj-done-sub").textContent = `${done.length} in ${p.name}`;
+  const row = (t) => {
+    const g = groups.find((x) => x.id === groupOfTask(t, groups));
+    const dot = el("i", { title: g?.name ?? "" });
+    dot.dataset.g = groupColor(g);
+    return el("div", { class: "done-row" }, dot, el("span", { class: "done-text", textContent: t.text }),
+      el("button", { type: "button", class: "small", textContent: "Put back", onclick: () => unfinishTask(t.id) }));
+  };
+  const fresh = done.filter((t) => (toDate(t.doneAt)?.getTime() ?? 0) >= today);
+  const older = done.filter((t) => (toDate(t.doneAt)?.getTime() ?? 0) < today);
+  $("proj-done-list").replaceChildren(
+    ...(fresh.length ? [el("h4", { textContent: "Today" }), ...fresh.map(row)] : []),
+    ...(older.length ? [el("h4", { textContent: "Earlier" }), ...older.map(row)] : []),
+    ...(done.length ? [] : [el("p", { class: "empty", textContent: "Nothing finished yet." })]));
+  $("proj-done-clear").hidden = !done.length;
+}
+$("proj-done-clear").addEventListener("click", async () => {
+  const p = currentProject();
+  const done = finishedTasks(p);
+  if (!confirm(`Delete all ${done.length} finished task${done.length === 1 ? "" : "s"}?`)) return;
+  for (const t of done) await guard(deleteDoc(doc(ptasksCol, t.id)), "clear finished tasks");
+});
+
+wideScreen.addEventListener("change", () => renderProjects());
 
 // ---------- auth & live data ----------
 
@@ -1328,8 +1614,9 @@ onAuthStateChanged(auth, (user) => {
   unsubs.forEach((u) => u());
   unsubs = [];
   notes = [];
-  blocks = [];
-  renderBoard();
+  projects = [];
+  ptasks = [];
+  renderProjects();
   userData = {};
 
   $("signin").hidden = Boolean(user);
@@ -1341,7 +1628,7 @@ onAuthStateChanged(auth, (user) => {
   $("signout").title = user ? `Signed in as ${user.email}` : "";
 
   if (!user) {
-    userRef = notesCol = blocksCol = null;
+    userRef = notesCol = projectsCol = ptasksCol = null;
     scratch.value = "";
     updateScratchClear();
     setStatus("");
@@ -1350,7 +1637,8 @@ onAuthStateChanged(auth, (user) => {
 
   userRef = doc(db, "users", user.uid);
   notesCol = collection(userRef, "notes");
-  blocksCol = collection(userRef, "blocks");
+  projectsCol = collection(userRef, "projects");
+  ptasksCol = collection(userRef, "ptasks");
   setStatus("Loading…");
   let migrated = false;
   syncState = {};
@@ -1384,11 +1672,21 @@ onAuthStateChanged(auth, (user) => {
     backfillEmbeddings();
   }, (err) => setStatus(loadError(user, err, "load notes"), true)));
 
-  unsubs.push(onSnapshot(blocksCol, { includeMetadataChanges: true }, (snap) => {
-    blocks = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
-    renderBoard();
-    updateSync("blocks", snap.metadata);
-  }, (err) => setStatus(loadError(user, err, "load the project board"), true)));
+  const projectsChanged = () => {
+    renderProjects();
+    if (doneDialog.open) renderFinished();
+  };
+  unsubs.push(onSnapshot(projectsCol, { includeMetadataChanges: true }, (snap) => {
+    projects = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    projectsChanged();
+    updateSync("projects", snap.metadata);
+  }, (err) => setStatus(loadError(user, err, "load projects"), true)));
+
+  unsubs.push(onSnapshot(ptasksCol, { includeMetadataChanges: true }, (snap) => {
+    ptasks = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+    projectsChanged();
+    updateSync("ptasks", snap.metadata);
+  }, (err) => setStatus(loadError(user, err, "load project tasks"), true)));
 });
 
 $("signin").addEventListener("click", async () => {
@@ -1463,6 +1761,6 @@ import("https://cdn.jsdelivr.net/gh/alexknight0/pages-common@1.0.0/update.js")
 
 // Opened from a home-screen shortcut (e.g. ./#tasks): jump straight into the capture box.
 if (location.hash) {
-  const target = { tasks: "task-text", ideas: "idea-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch", project: "block-text" }[currentView()];
+  const target = { tasks: "task-text", ideas: "idea-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch" }[currentView()];
   if (target) setTimeout(() => $(target).focus(), 300);
 }
