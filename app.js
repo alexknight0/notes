@@ -11,8 +11,11 @@
 //                             tags?                (idea; array of strings) }
 //   users/{uid}/projects/{id} { name, groups: [{id, name, color}], createdAt, updatedAt } — Projects;
 //                             groups are in priority order (top/left first), color is a GROUP_COLORS key
-//   users/{uid}/ptasks/{id}  { project, group, text, order, done, doneAt, createdAt, updatedAt } —
-//                             a project's tasks; order sorts tasks within a group (oldest first)
+//   users/{uid}/ptasks/{id}  { project, group, text, order, done, doneAt, createdAt, updatedAt,
+//                             summary?, summaryOf? } — a project's tasks, shown newest first;
+//                             order is set on add/move (no longer used for sorting since
+//                             2026-11-17); summary is the AI summary of a long text (worker/src/ai.js),
+//                             valid while summaryOf == textKey(text)
 //   users/{uid}/blocks/{id} { text, x, y, w, color, createdAt, updatedAt }  — the old Project board
 //                             (replaced by Projects on 2026-11-12; the docs are left in place, unused)
 //   users/{uid}/devices/{id} { token, timeZone, userAgent, updatedAt } — push reminders; one per
@@ -829,10 +832,14 @@ async function addFromEditor(type, text, due, image, tags) {
 
 // ---------- projects ----------
 // Each project has coloured groups in priority order (e.g. Now / Next / Later) holding to-do
-// tasks. Phone: one group fills the screen, the map at the top shows every group with its count;
-// swipe a task sideways to finish it, swipe empty space (or tap the map) to change group, long-press
-// a task and drop it on another group to move it. Wide screens with a mouse: every group side by
+// tasks, newest first, under small "Today / Yesterday / This week…" labels. Phone: one group fills
+// the screen; the map at the bottom (under "+ Add") shows every group with its count, tap a tile
+// to change group. Swipe a task sideways to finish it, long-press a task and drop it on another
+// group to move it. (Swiping empty space to change group was removed on 2026-11-17: Alex found it
+// a bad mental model next to swipe-to-finish.) Wide screens with a mouse: every group side by
 // side; the ✓ button (or x) finishes a task, drag a task to another column to move it.
+// A task longer than three lines shows an AI summary instead (see "AI summaries" below); tapping
+// any task opens it in full, with an Edit button.
 // Finished tasks drop out of the groups into one list per project (▾ menu → Finished tasks).
 
 const PROJECT_KEY = "notes.project"; // last-open project id (localStorage is shared by Alex's sites)
@@ -843,12 +850,12 @@ const GROUP_COLORS = {
 };
 const DEFAULT_GROUPS = [["Now", "red"], ["Next", "orange"], ["Later", "blue"]];
 const SWIPE_DONE = 0.3; // a task swiped this fraction of its width is finished
-const SWIPE_GROUP = 60; // px of sideways swipe on empty space that changes group
 const GESTURE_SLOP = 8; // px a finger/mouse must move before a press counts as a gesture
 const LONG_PRESS_MS = 450; // hold a task this long (without moving) to pick it up
 const TOAST_MS = 5000;
 const MAP_BARS = 6; // at most this many task lines per group in the map
 const wideScreen = window.matchMedia("(min-width: 700px) and (pointer: fine)");
+const projBoard = $("proj-board");
 
 let projectId = localStorage.getItem(PROJECT_KEY);
 let groupId = localStorage.getItem(GROUP_KEY);
@@ -875,9 +882,10 @@ function currentGroup(p) {
 function groupOfTask(t, groups) {
   return groups.some((g) => g.id === t.group) ? t.group : groups[0]?.id;
 }
-const byOrder = (a, b) => (a.order ?? 0) - (b.order ?? 0) || (toDate(a.createdAt)?.getTime() ?? 0) - (toDate(b.createdAt)?.getTime() ?? 0);
+const createdMs = (t) => toDate(t.createdAt)?.getTime() ?? 0;
+const byNewest = (a, b) => createdMs(b) - createdMs(a);
 const projectTasks = (p) => ptasks.filter((t) => t.project === p.id);
-const openTasksIn = (p, gid) => projectTasks(p).filter((t) => !t.done && groupOfTask(t, groupsOf(p)) === gid).sort(byOrder);
+const openTasksIn = (p, gid) => projectTasks(p).filter((t) => !t.done && groupOfTask(t, groupsOf(p)) === gid).sort(byNewest);
 const finishedTasks = (p) => projectTasks(p).filter((t) => t.done)
   .sort((a, b) => (toDate(b.doneAt)?.getTime() ?? 0) - (toDate(a.doneAt)?.getTime() ?? 0));
 
@@ -903,11 +911,23 @@ function setGroup(id, enterFrom) {
 // How long a task's line in the map is: longer text, longer line.
 const barWidth = (t) => `${Math.min(100, 35 + (t.text?.length ?? 0) * 1.6)}%`;
 
+// The small label over each run of tasks of the same age (newest first).
+function ageLabel(date, now = new Date()) {
+  if (!date) return "Older";
+  const day = (n) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - n);
+  if (date >= day(0)) return "Today";
+  if (date >= day(1)) return "Yesterday";
+  if (date >= day(6)) return "This week";
+  if (date >= day(30)) return "Last month";
+  if (date.getFullYear() === now.getFullYear()) return "This year";
+  return String(date.getFullYear());
+}
+
 function renderProjects() {
   if (gesture?.mode) { renderPending = true; return; } // don't yank a card out from under a finger
   renderPending = false;
   const p = currentProject();
-  for (const id of ["proj-head", "proj-map", "proj-board"]) $(id).hidden = !p;
+  for (const id of ["proj-head", "proj-map", "proj-stage"]) $(id).hidden = !p;
   $("proj-empty").hidden = Boolean(p);
   $("proj-add").hidden = !p || !currentGroup(p);
   if (!p) return;
@@ -942,10 +962,19 @@ function renderProjects() {
     el("button", { type: "button", class: "ptile ptile-add", textContent: "+", title: "New group", ariaLabel: "New group", onclick: () => openGroupEditor(null) }),
   );
 
-  // The columns: all shown side by side on wide screens, only the current one on phones.
-  $("proj-board").replaceChildren(...groups.map((g) => {
+  // The columns: all shown side by side on wide screens, only the current one on phones. Each
+  // column scrolls by itself; keep its place, or finishing a task would jump back to the top.
+  const scrolled = new Map([...projBoard.querySelectorAll(".pcol")].map((c) => [c.dataset.group, c.scrollTop]));
+  const now = new Date();
+  projBoard.replaceChildren(...groups.map((g) => {
     const tasks = openTasksIn(p, g.id);
-    const list = el("ul", { class: "plist" }, ...tasks.map(taskCard));
+    const list = el("ul", { class: "plist" });
+    let label = null;
+    for (const t of tasks) {
+      const l = ageLabel(toDate(t.createdAt), now);
+      if (l !== label) list.append(el("li", { class: "psec", ariaHidden: "true", textContent: (label = l) }));
+      list.append(taskCard(t));
+    }
     if (!tasks.length) list.append(el("li", { class: "pempty", textContent: "Nothing here" }));
     const col = el("section", { class: `pcol${g.id === groupId ? " current" : ""}`, ariaLabel: g.name },
       el("h2", { class: "pcol-head" },
@@ -953,27 +982,121 @@ function renderProjects() {
         el("span", { class: "pcol-count", textContent: tasks.length }),
         el("button", { type: "button", class: "pcol-more", textContent: "···", title: "Edit group", ariaLabel: `Edit group ${g.name}`, onclick: () => openGroupEditor(g) })),
       list,
-      el("button", { type: "button", class: "pcol-add", textContent: "+ Add", onclick: () => openTaskEditor({ group: g.id }) }));
+      el("button", { type: "button", class: "pcol-add", textContent: "+ Add", onclick: () => openTask({ group: g.id }) }));
     col.dataset.group = g.id;
     col.dataset.g = groupColor(g);
     return col;
   }));
+  markLongTasks(); // before restoring the scroll, so the cards have their final heights
+  for (const c of projBoard.querySelectorAll(".pcol")) if (scrolled.get(c.dataset.group)) c.scrollTop = scrolled.get(c.dataset.group);
 }
 
 function taskCard(t) {
-  const card = el("li", { class: "pcard", tabIndex: 0, ariaLabel: `${t.text}. Enter edits, x finishes.` },
+  const card = el("li", { class: "pcard", tabIndex: 0, ariaLabel: `${t.text}. Enter opens, x finishes.` },
     el("span", { class: "pcard-under", ariaHidden: "true", textContent: "✓ Done" }),
     el("div", { class: "pcard-body" },
-      el("span", { class: "pcard-text", textContent: t.text }),
+      el("div", { class: "pcard-main" },
+        el("span", { class: "pcard-text", textContent: t.text }),
+        el("span", { class: "pcard-summary" },
+          el("span", { class: "pcard-ai", title: "AI summary. Tap to read the whole note.", textContent: "✦ AI summary" }),
+          el("span", { class: "pcard-summary-text" }))),
       el("button", {
         type: "button", class: "pcard-done", textContent: "✓", title: "Done (x)", ariaLabel: "Done",
         onclick: (e) => { e.stopPropagation(); finishTask(t); },
       })));
   card.dataset.id = t.id;
+  // Only long tasks get a summary, so show it straight away (markLongTasks checks the length).
+  const summary = summaryOf(t);
+  if (summary) {
+    card.querySelector(".pcard-summary-text").textContent = summary;
+    card.classList.add("long", "summarised");
+  }
   card.addEventListener("keydown", (e) => taskKey(e, t));
   card.addEventListener("contextmenu", (e) => { if (e.pointerType !== "mouse") e.preventDefault(); }); // long-press is ours
   return card;
 }
+
+// ----- AI summaries of long tasks -----
+// A task whose text is more than three lines on screen (so it depends on the width) shows an AI
+// summary instead, marked "✦ AI summary"; until the summary arrives it shows the first three lines.
+// notes-ai (worker/src/ai.js, Workers AI) writes the summary; it's stored on the task with
+// summaryOf = textKey(text), so it's made once per text and shared by every device.
+
+const AI_URL = "https://notes-ai.alexknight0.workers.dev/summary";
+const SUMMARY_JOBS = 2; // summaries requested at once
+const summaryWanted = new Map(); // "id:key" -> task, waiting or being summarised
+const summaryFailed = new Set(); // "id:key" that failed; tried again after a reload or reconnect
+let summaryRunning = 0;
+let signedInUser = null;
+
+// A short fingerprint of a text (FNV-1a + length), to tell whether a summary is still current.
+function textKey(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return `${(h >>> 0).toString(36)}.${text.length}`;
+}
+const summaryOf = (t) => (t.summary && t.summaryOf === textKey(t.text ?? "") ? t.summary : null);
+
+// Measure every task on screen: show the summary on the long ones, ask for any that are missing.
+// The (hidden) text of a summarised card keeps its width, so it can still be measured.
+function markLongTasks() {
+  const cards = [...projBoard.querySelectorAll(".pcard")].filter((c) => c.offsetParent);
+  const long = cards.map((c) => {
+    const text = c.querySelector(".pcard-text");
+    return text.scrollHeight > text.clientHeight + 2;
+  });
+  cards.forEach((c, i) => {
+    c.classList.toggle("long", long[i]);
+    const t = ptasks.find((x) => x.id === c.dataset.id);
+    const summary = long[i] && t && summaryOf(t);
+    if (summary) c.querySelector(".pcard-summary-text").textContent = summary;
+    c.classList.toggle("summarised", Boolean(summary));
+    if (long[i] && t && !summary) requestSummary(t);
+  });
+}
+new ResizeObserver(() => markLongTasks()).observe(projBoard); // view shown, rotated, resized
+
+function requestSummary(t) {
+  const job = `${t.id}:${textKey(t.text ?? "")}`;
+  if (summaryWanted.has(job) || summaryFailed.has(job) || !signedInUser) return;
+  summaryWanted.set(job, t);
+  runSummaries();
+}
+async function runSummaries() {
+  while (summaryRunning < SUMMARY_JOBS) {
+    const next = [...summaryWanted].find(([, t]) => !t.summarising);
+    if (!next) return;
+    const [job, t] = next;
+    t.summarising = true;
+    summaryRunning++;
+    summarise(job, t).finally(() => {
+      summaryRunning--;
+      summaryWanted.delete(job);
+      runSummaries();
+    });
+  }
+}
+async function summarise(job, t) {
+  const text = t.text ?? "";
+  try {
+    const token = await signedInUser.getIdToken();
+    const res = await fetch(AI_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const answer = await res.json().catch(() => ({}));
+    if (!res.ok || !answer.summary) throw new Error(answer.error || `HTTP ${res.status}`);
+    const now = ptasks.find((x) => x.id === t.id);
+    if (!now || now.text !== text) return; // edited meanwhile; the new text gets its own summary
+    // Not updatedAt: a summary isn't an edit.
+    await updateDoc(doc(ptasksCol, t.id), { summary: answer.summary, summaryOf: textKey(text) });
+  } catch (err) {
+    summaryFailed.add(job);
+    console.warn("Couldn't summarise a task:", err.message);
+  }
+}
+window.addEventListener("online", () => { summaryFailed.clear(); markLongTasks(); });
 
 // ----- finishing, moving, undo -----
 
@@ -1015,7 +1138,7 @@ $("proj-toast-undo").addEventListener("click", () => {
 });
 $("proj-toast-finished").addEventListener("click", () => { hideToast(); openFinished(); });
 
-// Keyboard on a focused task: x finishes, Enter edits, [ and ] move it to the previous/next group.
+// Keyboard on a focused task: x finishes, Enter opens, [ and ] move it to the previous/next group.
 function taskKey(e, t) {
   if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
   const p = currentProject();
@@ -1027,7 +1150,7 @@ function taskKey(e, t) {
     finishTask(t);
   } else if (e.key === "Enter") {
     e.preventDefault();
-    openTaskEditor({ task: t });
+    openTask({ task: t });
   } else if ((e.key === "[" || e.key === "]") && groups.length > 1) {
     e.preventDefault();
     const target = groups[i + (e.key === "]" ? 1 : -1)];
@@ -1043,7 +1166,9 @@ function taskKey(e, t) {
 }
 // After finishing the focused task, keep the keyboard going with the next one.
 function focusNeighbour(card) {
-  const next = card.nextElementSibling?.matches(".pcard") ? card.nextElementSibling : card.previousElementSibling;
+  const cards = [...card.parentElement.querySelectorAll(".pcard")];
+  const i = cards.indexOf(card);
+  const next = cards[i + 1] ?? cards[i - 1];
   if (next?.dataset.id) requestAnimationFrame(() => document.querySelector(`.pcard[data-id="${next.dataset.id}"]`)?.focus());
 }
 // z (not while typing) = Undo, while the Undo bar is up.
@@ -1055,11 +1180,10 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ----- touch and mouse gestures on the board -----
-// Touch: sideways on a task = finish it; sideways on empty space = next/previous group; hold a
-// task still for LONG_PRESS_MS = pick it up (drop it on a group in the map). Vertical = scroll.
-// Mouse: press and move a task = drag it to another column; click = edit.
+// Touch: sideways on a task = finish it; hold a task still for LONG_PRESS_MS = pick it up (drop
+// it on a group in the map). Vertical = scroll. Sideways on empty space does nothing.
+// Mouse: press and move a task = drag it to another column; click = open it.
 
-const projBoard = $("proj-board");
 
 // Pinch-zoomed: no swipe gestures, so a sideways swipe pans the zoomed page (see the scratch pad).
 const updateProjZoom = () => $("view-projects").classList.toggle("zoomed", zoomed());
@@ -1074,12 +1198,12 @@ projBoard.addEventListener("pointerdown", (e) => {
     return;
   }
   const card = e.target.closest(".pcard");
+  if (!card) return; // empty space: the browser scrolls; no group swiping
   const mouse = e.pointerType === "mouse";
-  if (mouse && !card) return; // no group swiping with a mouse; every column is on screen
-  const t = card && ptasks.find((x) => x.id === card.dataset.id);
-  if (card && !t) return;
+  const t = ptasks.find((x) => x.id === card.dataset.id);
+  if (!t) return;
   gesture = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, card, task: t, mouse, mode: null };
-  if (card && !mouse) gesture.timer = setTimeout(() => startTaskDrag(), LONG_PRESS_MS);
+  if (!mouse) gesture.timer = setTimeout(() => startTaskDrag(), LONG_PRESS_MS);
 });
 
 window.addEventListener("pointermove", (e) => {
@@ -1095,17 +1219,14 @@ window.addEventListener("pointermove", (e) => {
     if (g.zoomTap) { g.mode = "none"; return; }
     if (g.mouse) startTaskDrag();
     else if (Math.abs(dx) > Math.abs(dy)) {
-      g.mode = g.card ? "swipe" : wideScreen.matches ? "none" : "page";
-      if (g.mode === "swipe") g.card.classList.add("swiping");
+      g.mode = "swipe";
+      g.card.classList.add("swiping");
     } else g.mode = "scroll"; // the browser scrolls the list (touch-action: pan-y)
   }
   if (g.mode === "swipe") {
     g.card.dataset.dir = dx > 0 ? "right" : "left";
     g.card.querySelector(".pcard-body").style.transform = `translateX(${dx}px)`;
     g.card.classList.toggle("armed", Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE);
-  } else if (g.mode === "page") {
-    const col = projBoard.querySelector(".pcol.current");
-    if (col) col.style.transform = `translateX(${dx * 0.4}px)`;
   } else if (g.mode === "drag") {
     moveDragGhost();
   }
@@ -1122,7 +1243,7 @@ function endGesture(e) {
   const dx = g.x - g.x0;
   const cancelled = e.type === "pointercancel";
   if (!g.mode && g.card && !cancelled) {
-    openTaskEditor({ task: g.task }); // a tap or click
+    openTask({ task: g.task }); // a tap or click
   } else if (g.mode === "swipe") {
     const body = g.card.querySelector(".pcard-body");
     if (!cancelled && Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE) {
@@ -1136,13 +1257,6 @@ function endGesture(e) {
       body.style.transform = "";
       setTimeout(() => g.card.classList.remove("swiping", "armed"), 180);
     }
-  } else if (g.mode === "page") {
-    const col = projBoard.querySelector(".pcol.current");
-    if (col) col.style.transform = "";
-    const groups = groupsOf(currentProject());
-    const i = groups.findIndex((x) => x.id === groupId);
-    const next = !cancelled && Math.abs(dx) > SWIPE_GROUP ? groups[i + (dx < 0 ? 1 : -1)] : null;
-    if (next) setGroup(next.id, dx < 0 ? "right" : "left");
   } else if (g.mode === "drag") {
     endTaskDrag(g, cancelled);
   }
@@ -1188,32 +1302,67 @@ function endTaskDrag(g, cancelled) {
   if (target) moveTask(g.task, target.dataset.group);
 }
 
-// ----- the "+ Add" / task editor dialog -----
-// New tasks go into the group they were added from (no group picker, to keep it simple);
-// editing an existing task can move it to another group.
+// ----- a task: read it in full, edit it, or add a new one -----
+// Tapping a task opens it to read, taking most of the screen, with an Edit button (styled like
+// "+ Add"). Edit turns the same dialog into the editor, with group chips (to move it) and Delete.
+// "+ Add" opens a small editor; new tasks go into the group they were added from (no group picker,
+// to keep it simple).
 
 const ptaskDialog = $("ptask-edit");
 let editingTask = null; // {task?, group, start}
 
-function openTaskEditor({ task = null, group = null }) {
+function openTask({ task = null, group = null }) {
   const p = currentProject();
   if (!p) return;
   const groups = groupsOf(p);
   editingTask = { task, group: task ? groupOfTask(task, groups) : group ?? currentGroup(p)?.id };
   if (!editingTask.group) return;
-  const g = groups.find((x) => x.id === editingTask.group);
   ptaskDialog.returnValue = "";
-  $("ptask-title").replaceChildren(task ? "Edit task" : "New task in ", task ? "" : el("span", { class: "gname", textContent: g.name }));
-  $("ptask-title").dataset.g = groupColor(g);
   $("ptask-text").value = task?.text ?? "";
-  $("ptask-delete").hidden = !task;
-  $("ptask-save").textContent = task ? "Save" : "Add";
-  $("ptask-groups").hidden = !task || groups.length < 2;
-  syncTaskGroups();
+  ptaskDialog.classList.toggle("full", Boolean(task));
+  setTaskMode(task ? "view" : "new");
   editingTask.start = taskEditorState();
   ptaskDialog.showModal();
-  if (!task) $("ptask-text").focus();
+  if (task) {
+    $("ptask-view").scrollTop = 0;
+    $("ptask-edit-btn").focus(); // so Enter (again) edits on desktop
+  } else $("ptask-text").focus();
 }
+function setTaskMode(mode) {
+  const { task } = editingTask;
+  const groups = groupsOf(currentProject());
+  const g = groups.find((x) => x.id === editingTask.group);
+  ptaskDialog.dataset.mode = mode;
+  const title = $("ptask-title");
+  title.dataset.g = groupColor(g);
+  const gname = el("span", { class: "gname", textContent: g?.name ?? "" });
+  if (mode === "new") title.replaceChildren("New task in ", gname);
+  else title.replaceChildren(gname, el("small", { textContent: task.createdAt ? `added ${shortDate(toDate(task.createdAt))}` : "" }));
+  $("ptask-view").textContent = task?.text ?? "";
+  $("ptask-groups").hidden = mode !== "edit" || groups.length < 2;
+  $("ptask-delete").hidden = mode !== "edit";
+  $("ptask-save").textContent = mode === "new" ? "Add" : "Save";
+  if (mode === "edit") syncTaskGroups();
+}
+$("ptask-edit-btn").addEventListener("click", () => {
+  const top = $("ptask-view").scrollTop;
+  setTaskMode("edit");
+  const box = $("ptask-text");
+  box.scrollTop = top; // same place in the text as you were reading
+  // Desktop: type straight away. Phones: no keyboard until you tap where you want to change it.
+  if (wideScreen.matches) {
+    box.focus({ preventScroll: true });
+    box.scrollTop = top;
+  }
+});
+// Cancel while editing a task goes back to reading it (as it was); for a new task it closes.
+$("ptask-cancel").addEventListener("click", () => {
+  if (ptaskDialog.dataset.mode !== "edit") { ptaskDialog.close("cancel"); return; }
+  $("ptask-text").value = editingTask.task.text ?? "";
+  editingTask.group = groupOfTask(editingTask.task, groupsOf(currentProject()));
+  setTaskMode("view");
+});
+$("ptask-close").addEventListener("click", () => cancelTaskEditor());
 function syncTaskGroups() {
   const groups = groupsOf(currentProject());
   $("ptask-groups").replaceChildren(...groups.map((g) => {
@@ -1234,12 +1383,17 @@ async function addTask(group, text) {
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }), "add the task");
 }
-// Enter adds the task and clears the box for the next one (new tasks); Shift+Enter is a new line.
+// New task: Enter adds it and clears the box for the next one; Shift+Enter is a new line.
+// Editing a task (often a long note): Enter is a new line; Ctrl/Cmd+Enter saves.
 $("ptask-text").addEventListener("keydown", (e) => {
-  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+  if (e.key !== "Enter" || e.isComposing) return;
+  if (editingTask?.task) {
+    if (e.ctrlKey || e.metaKey) { e.preventDefault(); ptaskDialog.close("save"); }
+    return;
+  }
+  if (e.shiftKey) return;
   e.preventDefault();
   const text = $("ptask-text").value.trim();
-  if (editingTask?.task) { ptaskDialog.close("save"); return; }
   if (!text) return;
   $("ptask-text").value = "";
   editingTask.start = taskEditorState();
@@ -1273,7 +1427,7 @@ ptaskDialog.addEventListener("close", async () => {
   await guard(updateDoc(doc(ptasksCol, task.id), changes), "save the task");
 });
 
-$("proj-add").addEventListener("click", () => openTaskEditor({}));
+$("proj-add").addEventListener("click", () => openTask({}));
 
 // ----- group editor: title and colour -----
 
@@ -1610,6 +1764,7 @@ navigator.serviceWorker?.addEventListener("message", (e) => {
 
 onAuthStateChanged(auth, (user) => {
   $("boot").hidden = true;
+  signedInUser = user;
   initReminders(user);
   unsubs.forEach((u) => u());
   unsubs = [];

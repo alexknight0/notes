@@ -1,0 +1,14 @@
+# Notes AI summaries Worker (src/ai.js): POST /summary for long Projects tasks, on Workers AI.
+# Deploy: npx wrangler deploy -c wrangler-ai.toml (from this folder). Logs: npx wrangler tail notes-ai
+# URL: https://notes-ai.alexknight0.workers.dev
+name = "notes-ai"
+main = "src/ai.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+preview_urls = false
+
+[ai]
+binding = "AI"
+
+[observability]
+enabled = true

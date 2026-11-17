@@ -492,8 +492,9 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .proj-pick .caret { color: var(--muted); font-size: 0.8rem; }
 .proj-remaining { font-size: 0.82rem; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-/* The map: one tile per group with its count and a line per task; the group on screen is outlined. */
-.proj-map { flex: none; display: flex; gap: 4px; margin: 0.6rem var(--pad) 0; padding: 4px; border-radius: 14px; background: var(--surface-2); }
+/* The map: one tile per group with its count and a line per task; the group on screen is outlined.
+   At the bottom, under the Add button, where the thumb is (Alex asked 2026-11-17). */
+.proj-map { flex: none; display: flex; gap: 4px; margin: 0 var(--pad) var(--pad); padding: 4px; border-radius: 14px; background: var(--surface-2); }
 .ptile {
   flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 0.3rem;
   padding: 0.38rem 0.45rem 0.45rem; border-radius: 10px; border: none; text-align: left;
@@ -510,9 +511,12 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .ptile-add:hover { background: var(--surface); }
 .ptile.drop-over { box-shadow: 0 0 0 3px var(--g); transform: scale(1.04); }
 
+/* The board plus what floats over it (Add button, Undo bar). */
+.proj-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.proj-stage[hidden] { display: none; }
 /* Columns. Phones: only the current group, filling the view. pan-y: vertical swipes scroll the
-   list natively, sideways ones come to app.js (finish a task / change group); pinch-zoom still works. */
-.proj-board { flex: 1; min-height: 0; display: flex; padding: 0.7rem var(--pad) var(--pad); touch-action: pan-y pinch-zoom; }
+   list natively, sideways ones on a task come to app.js (finish it); pinch-zoom still works. */
+.proj-board { flex: 1; min-height: 0; display: flex; padding: 0.7rem var(--pad) 0.5rem; touch-action: pan-y pinch-zoom; }
 /* Pinch-zoomed (set by app.js): swipes pan the zoomed page instead of finishing tasks. */
 #view-projects.zoomed .proj-board { touch-action: auto; }
 .pcol {
@@ -535,6 +539,14 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .pcol-add { display: none; align-self: flex-start; padding: 0.3rem 0.5rem; background: none; color: var(--muted); font-weight: 550; font-size: 0.85rem; }
 .pcol-add:hover { color: var(--text); }
 .plist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+/* "Today / Yesterday / This week…" over each run of tasks (newest first); kept to one thin line. */
+.psec {
+  display: flex; align-items: center; gap: 0.45rem; margin: 0.15rem 0.3rem -0.2rem; line-height: 1;
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
+  color: color-mix(in srgb, var(--g-ink) 70%, var(--muted));
+}
+.psec::after { content: ""; flex: 1; border-top: 1px solid color-mix(in srgb, var(--g) 22%, transparent); }
+.plist > .psec:first-child { margin-top: 0; }
 .pempty { color: var(--muted); font-size: 0.85rem; padding: 0.3rem 0.4rem; }
 
 /* A task card. The body slides sideways over a green "✓ Done" layer while being swiped. */
@@ -556,7 +568,20 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
   padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 12px;
   background: var(--surface); box-shadow: var(--shadow); line-height: 1.4;
 }
-.pcard-text { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pcard-main { flex: 1; min-width: 0; position: relative; }
+/* At most three lines; app.js measures this, and a longer task shows its AI summary instead. */
+.pcard-text, .pcard-summary {
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+.pcard-summary { display: none; white-space: normal; }
+/* Hidden but still laid out at full width, so app.js can tell if it's still too long (e.g. after rotating). */
+.pcard.summarised .pcard-text { position: absolute; inset: 0 0 auto; visibility: hidden; pointer-events: none; }
+.pcard.summarised .pcard-summary { display: -webkit-box; }
+.pcard-ai {
+  display: inline-block; margin-right: 0.35rem; padding: 0.05rem 0.4rem; border-radius: 999px; vertical-align: 0.08em;
+  background: var(--accent-soft); color: var(--accent-ink); font-size: 0.66rem; font-weight: 700; line-height: 1.35;
+}
 .pcard-done { display: none; }
 .pcard.lifted { opacity: 0.35; }
 .pdrag-ghost {
@@ -567,16 +592,18 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 
 .proj-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem; text-align: center; color: var(--muted); }
 
-/* The one Add button, floating bottom-right by your thumb (no row of its own). */
-.proj-fab {
-  position: absolute; right: calc(var(--pad) + 0.3rem); bottom: calc(var(--pad) + 0.3rem); z-index: 5;
+/* The one Add button, floating bottom-right by your thumb (no row of its own), just above the map.
+   The Edit button of an open task looks the same. */
+.proj-fab, .ptask-fab {
+  position: absolute; z-index: 5;
   padding: 0.75rem 1.15rem; border-radius: 16px; font-size: 0.95rem;
   box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 4px rgb(0 0 0 / 0.12);
 }
-.proj-fab span { font-size: 1.15rem; line-height: 1; font-weight: 500; margin-right: 0.15rem; }
+.proj-fab { right: calc(var(--pad) + 0.4rem); bottom: 1rem; }
+.proj-fab span, .ptask-fab span { font-size: 1.15rem; line-height: 1; font-weight: 500; margin-right: 0.15rem; }
 /* "Done · See finished · Undo" bar after finishing a task; covers the Add button for a few seconds. */
 .proj-toast {
-  position: absolute; left: var(--pad); right: var(--pad); bottom: calc(var(--pad) + 0.3rem); z-index: 6;
+  position: absolute; left: var(--pad); right: var(--pad); bottom: 1rem; z-index: 6;
   display: flex; align-items: center; gap: 0.3rem; padding: 0.35rem 0.4rem 0.35rem 0.9rem; border-radius: 12px;
   background: light-dark(#1c1c1e, #ececf1); color: light-dark(white, #1c1c1e); font-size: 0.9rem;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
@@ -590,6 +617,21 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .pdialog h3 small { color: var(--muted); font-weight: 500; font-size: 0.82rem; margin-left: 0.3rem; }
 #ptask-title .gname { color: var(--g-ink); }
 #ptask-text { min-height: 7rem; }
+.ptask-top { display: flex; align-items: center; gap: 0.5rem; }
+.ptask-top h3 { flex: 1; min-width: 0; }
+.ptask-close { flex: none; width: 2.2rem; height: 2.2rem; padding: 0; margin: -0.4rem -0.4rem -0.4rem 0; border-radius: 50%; background: none; color: var(--muted); font-size: 1rem; }
+.ptask-view { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
+/* Modes (data-mode, set by app.js): view = read with an Edit button; edit / new = the editor. */
+#ptask-edit[data-mode="view"] :is(#ptask-text, #ptask-groups, .ptask-actions),
+#ptask-edit:not([data-mode="view"]) :is(#ptask-view, .ptask-fab),
+#ptask-edit:not([data-mode="view"]) .ptask-close { display: none; }
+/* An existing task (read or edited) takes most of the screen; its text scrolls inside. */
+#ptask-edit.full { width: calc(100vw - 1.25rem); height: calc(100dvh - 2.5rem); max-height: none; padding: 1rem 1.1rem; }
+#ptask-edit.full[open] { display: flex; flex-direction: column; }
+#ptask-edit.full form { flex: 1; min-height: 0; }
+#ptask-edit.full .ptask-view { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 4.5rem; outline: none; }
+#ptask-edit.full #ptask-text { flex: 1; min-height: 0; resize: none; field-sizing: fixed; }
+.ptask-fab { right: 1.1rem; bottom: 1.1rem; }
 .chips { gap: 0.4rem; }
 .pchip.active { background: var(--g); border-color: var(--g); }
 .done-list { max-height: 55dvh; overflow-y: auto; }
@@ -629,6 +671,7 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
   .pcard-done:hover { background: #24873f; }
   .pcard:hover .pcard-body { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
   .proj-toast { left: auto; width: 24rem; }
+  #ptask-edit.full { width: min(48rem, calc(100vw - 4rem)); height: min(52rem, calc(100dvh - 4rem)); padding: 1.3rem 1.5rem; }
 }
 
 .visually-hidden {
