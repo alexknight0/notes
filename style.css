@@ -675,8 +675,10 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
    appears on hover (or x), drag a task to another column, "+ Add" under each column. */
 @media (min-width: 700px) and (pointer: fine) {
   body:has(#view-projects:not([hidden])) { max-width: 80rem; }
-  .proj-map, .proj-fab { display: none; }
-  .proj-board { gap: 0.7rem; overflow-x: auto; touch-action: auto; align-items: flex-start; }
+  .proj-map { display: none; }
+  /* The floating "+ Add" stays bottom-right (as on phones); the board leaves room under the
+     columns for it, so it never covers a task. */
+  .proj-board { gap: 0.7rem; overflow-x: auto; touch-action: auto; align-items: flex-start; padding-bottom: 4.6rem; }
   .pcol { display: flex; flex: 1 0 14rem; max-height: 100%; padding-bottom: 0.55rem; }
   .pcol-count, .pcol-add { display: inline-block; }
   .pcard-body { padding-right: 0.8rem; }

@@ -850,7 +850,7 @@ async function addFromEditor(type, text, due, image, tags) {
 // Finished tasks drop out of the groups into one list per project (▾ menu → Finished tasks).
 
 const PROJECT_KEY = "notes.project"; // last-open project id (localStorage is shared by Alex's sites)
-const GROUP_KEY = "notes.projectGroup"; // last-open group id, for the phone's one-group view
+const GROUP_KEY = "notes.projectGroup"; // phones: the group on screen; wide screens: the group last added to
 const GROUP_COLORS = {
   red: "Red", orange: "Orange", yellow: "Yellow", green: "Green", teal: "Teal",
   blue: "Blue", purple: "Purple", pink: "Pink", grey: "Grey",
@@ -1312,17 +1312,18 @@ function endTaskDrag(g, cancelled) {
 // ----- a task: read it in full, edit it, or add a new one -----
 // Tapping a task opens it to read, taking most of the screen, with an Edit button (styled like
 // "+ Add"). Edit turns the same dialog into the editor, with group chips (to move it) and Delete.
-// "+ Add" opens a small editor; new tasks go into the group they were added from (no group picker,
-// to keep it simple).
+// "+ Add" opens a small editor. Phones: new tasks go into the group on screen (no group picker,
+// to keep it simple). Wide screens: the floating "+ Add" (Alex asked 2026-11-17: the per-column
+// "+ Add" can be a long scroll down) shows group chips, starting at the group last added to.
 
 const ptaskDialog = $("ptask-edit");
 let editingTask = null; // {task?, group, start}
 
-function openTask({ task = null, group = null }) {
+function openTask({ task = null, group = null, pick = false }) {
   const p = currentProject();
   if (!p) return;
   const groups = groupsOf(p);
-  editingTask = { task, group: task ? groupOfTask(task, groups) : group ?? currentGroup(p)?.id };
+  editingTask = { task, pick, group: task ? groupOfTask(task, groups) : group ?? currentGroup(p)?.id };
   if (!editingTask.group) return;
   ptaskDialog.returnValue = "";
   $("ptask-text").value = task?.text ?? "";
@@ -1346,10 +1347,11 @@ function setTaskMode(mode) {
   if (mode === "new") title.replaceChildren("New task in ", gname);
   else title.replaceChildren(gname, el("small", { textContent: task.createdAt ? `added ${shortDate(toDate(task.createdAt))}` : "" }));
   $("ptask-view").textContent = task?.text ?? "";
-  $("ptask-groups").hidden = mode !== "edit" || groups.length < 2;
+  const chips = mode === "edit" || (mode === "new" && editingTask.pick);
+  $("ptask-groups").hidden = !chips || groups.length < 2;
   $("ptask-delete").hidden = mode !== "edit";
   $("ptask-save").textContent = mode === "new" ? "Add" : "Save";
-  if (mode === "edit") syncTaskGroups();
+  if (chips) syncTaskGroups();
 }
 $("ptask-edit-btn").addEventListener("click", () => {
   const top = $("ptask-view").scrollTop;
@@ -1376,7 +1378,11 @@ function syncTaskGroups() {
     const chip = el("button", {
       type: "button", class: `chip pchip${g.id === editingTask.group ? " active" : ""}`, role: "radio",
       ariaChecked: String(g.id === editingTask.group), textContent: g.name,
-      onclick: () => { editingTask.group = g.id; syncTaskGroups(); },
+      onclick: () => {
+        editingTask.group = g.id;
+        if (ptaskDialog.dataset.mode === "new") setTaskMode("new"); // title names the group
+        else syncTaskGroups();
+      },
     });
     chip.dataset.g = groupColor(g);
     return chip;
@@ -1385,6 +1391,11 @@ function syncTaskGroups() {
 const taskEditorState = () => JSON.stringify([$("ptask-text").value, editingTask.group]);
 
 async function addTask(group, text) {
+  // Wide screens: the floating Add starts at this group next time (phones show it already).
+  if (wideScreen.matches && group !== groupId) {
+    groupId = group;
+    localStorage.setItem(GROUP_KEY, group);
+  }
   await guard(addDoc(ptasksCol, {
     project: projectId, group, text, order: Date.now(), done: false, doneAt: null,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -1434,7 +1445,7 @@ ptaskDialog.addEventListener("close", async () => {
   await guard(updateDoc(doc(ptasksCol, task.id), changes), "save the task");
 });
 
-$("proj-add").addEventListener("click", () => openTask({}));
+$("proj-add").addEventListener("click", () => openTask({ pick: wideScreen.matches }));
 
 // ----- group editor: title and colour -----
 
