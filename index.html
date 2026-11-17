@@ -145,7 +145,7 @@
         <div id="proj-board" class="proj-board"></div>
         <button id="proj-add" type="button" class="primary proj-fab" hidden><span aria-hidden="true">+</span> Add</button>
         <div id="proj-toast" class="proj-toast" role="status" hidden>
-          <span>Done</span><span class="spacer"></span>
+          <span id="proj-toast-text">Done</span><span class="spacer"></span>
           <button id="proj-toast-finished" type="button">See finished</button>
           <button id="proj-toast-undo" type="button">Undo</button>
         </div>
@@ -239,7 +239,12 @@
         <button id="ptask-cancel" type="button">Cancel</button>
         <button id="ptask-save" value="save" class="primary">Save</button>
       </div>
-      <button id="ptask-edit-btn" type="button" class="primary ptask-fab"><span aria-hidden="true">✎</span> Edit</button>
+      <!-- Reading: Close by the thumb on phones (the ✕ is far up), Edit styled like "+ Add". -->
+      <div class="row ptask-viewbar">
+        <button id="ptask-close-bottom" type="button" class="ptask-close-big">Close</button>
+        <span class="spacer"></span>
+        <button id="ptask-edit-btn" type="button" class="primary ptask-fab"><span aria-hidden="true">✎</span> Edit</button>
+      </div>
     </form>
   </dialog>
 

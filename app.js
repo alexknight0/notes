@@ -995,7 +995,9 @@ function renderProjects() {
     return col;
   }));
   markLongTasks(); // before restoring the scroll, so the cards have their final heights
+  markOverflowing();
   for (const c of projBoard.querySelectorAll(".pcol")) if (scrolled.get(c.dataset.group)) c.scrollTop = scrolled.get(c.dataset.group);
+  showRestored();
 }
 
 function taskCard(t) {
@@ -1061,7 +1063,16 @@ function markLongTasks() {
     if (long[i] && t && !summary) requestSummary(t);
   });
 }
-new ResizeObserver(() => markLongTasks()).observe(projBoard); // view shown, rotated, resized
+new ResizeObserver(() => { markLongTasks(); markOverflowing(); }).observe(projBoard); // view shown, rotated, resized
+
+// Wide screens: a column tall enough to scroll gets room at the bottom, so its last task can
+// scroll out from under the floating "+ Add" (short columns stay short; the button hovers).
+function markOverflowing() {
+  for (const c of projBoard.querySelectorAll(".pcol")) {
+    c.classList.remove("overflowing");
+    c.classList.toggle("overflowing", c.scrollHeight > c.clientHeight + 1);
+  }
+}
 
 function requestSummary(t) {
   const job = `${t.id}:${textKey(t.text ?? "")}`;
@@ -1112,14 +1123,39 @@ async function finishTask(t) {
   showToast();
   await guard(updateDoc(doc(ptasksCol, t.id), { done: true, doneAt: serverTimestamp(), updatedAt: serverTimestamp() }), "finish the task");
 }
+// Undo / Put back: the task returns to its group (the first group if its own has gone), and its
+// card slides back in with a glow (.restored) so it's clear the undo worked. Phones switch to that
+// group first so the card is on screen.
+let restored = null; // {id, at, scrolled}
+const RESTORE_MS = 1600; // length of the .restored animation in style.css
 async function unfinishTask(id) {
   const t = ptasks.find((x) => x.id === id);
   if (!t) return;
-  // Back at the end of its group, or the first group if its own has gone.
   const p = projects.find((x) => x.id === t.project);
+  const group = groupOfTask(t, groupsOf(p)) ?? t.group;
+  restored = { id, at: Date.now(), scrolled: false };
+  if (!wideScreen.matches && p?.id === projectId && group !== groupId) {
+    groupId = group;
+    localStorage.setItem(GROUP_KEY, group);
+  }
   await guard(updateDoc(doc(ptasksCol, id), {
-    done: false, doneAt: null, group: groupOfTask(t, groupsOf(p)) ?? t.group, order: Date.now(), updatedAt: serverTimestamp(),
+    done: false, doneAt: null, group, order: Date.now(), updatedAt: serverTimestamp(),
   }), "put the task back");
+}
+// Called after every render: the card is rebuilt on each Firestore update (e.g. when the server
+// confirms the write), so the animation continues from where it was (negative delay).
+function showRestored() {
+  if (!restored) return;
+  const elapsed = Date.now() - restored.at;
+  if (elapsed > RESTORE_MS) { restored = null; return; }
+  const card = projBoard.querySelector(`.pcard[data-id="${restored.id}"]`);
+  if (!card) return;
+  card.classList.add("restored");
+  card.style.setProperty("--restore-delay", `${-elapsed}ms`);
+  if (!restored.scrolled) {
+    restored.scrolled = true;
+    card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 }
 function moveTask(t, gid) {
   if (!gid || t.group === gid) return;
@@ -1130,17 +1166,26 @@ function moveTask(t, gid) {
 }
 
 function showToast() {
+  $("proj-toast").classList.remove("undone");
+  $("proj-toast-text").textContent = "Done";
   $("proj-toast").hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(hideToast, TOAST_MS);
+}
+// After Undo: the bar says so for a moment (no buttons) while the task slides back.
+function showUndone() {
+  $("proj-toast").classList.add("undone");
+  $("proj-toast-text").textContent = "↩ Undone: back in the list";
+  $("proj-toast").hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, 1500);
 }
 function hideToast() {
   clearTimeout(toastTimer);
   $("proj-toast").hidden = true;
 }
 $("proj-toast-undo").addEventListener("click", () => {
-  hideToast();
-  if (lastDone) unfinishTask(lastDone);
+  if (lastDone) { showUndone(); unfinishTask(lastDone); } else hideToast();
   lastDone = null;
 });
 $("proj-toast-finished").addEventListener("click", () => { hideToast(); openFinished(); });
@@ -1372,6 +1417,7 @@ $("ptask-cancel").addEventListener("click", () => {
   setTaskMode("view");
 });
 $("ptask-close").addEventListener("click", () => cancelTaskEditor());
+$("ptask-close-bottom").addEventListener("click", () => cancelTaskEditor());
 function syncTaskGroups() {
   const groups = groupsOf(currentProject());
   $("ptask-groups").replaceChildren(...groups.map((g) => {
