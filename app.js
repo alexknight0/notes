@@ -840,11 +840,13 @@ async function addFromEditor(type, text, due, image, tags) {
 // ---------- projects ----------
 // Each project has coloured groups in priority order (e.g. Now / Next / Later) holding to-do
 // tasks, newest first, under small "Today / Yesterday / This week…" labels. Phone: one group fills
-// the screen; the map at the bottom (under "+ Add") shows every group with its count, tap a tile
-// to change group. Swipe a task sideways to finish it, long-press a task and drop it on another
-// group to move it. (Swiping empty space to change group was removed on 2026-11-17: Alex found it
-// a bad mental model next to swipe-to-finish.) Wide screens with a mouse: every group side by
-// side; the ✓ button (or x) finishes a task, drag a task to another column to move it.
+// the screen; the map at the top shows every group with its count. Swiping sideways anywhere (on a
+// task or not) or tapping a tile changes group; long-press a task and drop it on another group to
+// move it; a task is finished with Done in its popup. (History, 2026-11-17: swipe-to-finish and
+// swipe-to-change-group together were a bad mental model, so group swiping went and the map moved
+// to the bottom; later the same day Alex chose the other way round: swipe = change group only, no
+// swipe-to-finish, map back at the top.) Wide screens with a mouse: every group side by side; the
+// ✓ button (or x) finishes a task, drag a task to another column to move it.
 // A task longer than three lines shows an AI summary instead (see "AI summaries" below); tapping
 // any task opens it in full, with an Edit button.
 // Finished tasks drop out of the groups into one list per project (▾ menu → Finished tasks).
@@ -856,7 +858,7 @@ const GROUP_COLORS = {
   blue: "Blue", purple: "Purple", pink: "Pink", grey: "Grey",
 };
 const DEFAULT_GROUPS = [["Now", "red"], ["Next", "orange"], ["Later", "blue"]];
-const SWIPE_DONE = 0.3; // a task swiped this fraction of its width is finished
+const SWIPE_GROUP = 60; // px of sideways swipe that changes group (phones)
 const GESTURE_SLOP = 8; // px a finger/mouse must move before a press counts as a gesture
 const LONG_PRESS_MS = 450; // hold a task this long (without moving) to pick it up
 const TOAST_MS = 5000;
@@ -996,7 +998,6 @@ function renderProjects() {
 
 function taskCard(t) {
   const card = el("li", { class: "pcard", tabIndex: 0, ariaLabel: `${t.text}. Enter opens, x finishes.` },
-    el("span", { class: "pcard-under", ariaHidden: "true", textContent: "✓ Done" }),
     el("div", { class: "pcard-body" },
       el("div", { class: "pcard-main" },
         el("span", { class: "pcard-text", textContent: t.text }),
@@ -1226,8 +1227,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ----- touch and mouse gestures on the board -----
-// Touch: sideways on a task = finish it; hold a task still for LONG_PRESS_MS = pick it up (drop
-// it on a group in the map). Vertical = scroll. Sideways on empty space does nothing.
+// Touch: sideways anywhere = next/previous group (phones); hold a task still for LONG_PRESS_MS =
+// pick it up (drop it on a group in the map). Vertical = scroll.
 // Mouse: press and move a task = drag it to another column; click = open it.
 
 
@@ -1251,12 +1252,12 @@ projBoard.addEventListener("pointerdown", (e) => {
     return;
   }
   const card = e.target.closest(".pcard");
-  if (!card) return; // empty space: the browser scrolls; no group swiping
   const mouse = e.pointerType === "mouse";
-  const t = ptasks.find((x) => x.id === card.dataset.id);
-  if (!t) return;
+  if (mouse && !card) return; // every column is on screen; nothing to swipe to
+  const t = card && ptasks.find((x) => x.id === card.dataset.id);
+  if (card && !t) return;
   gesture = { pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, card, task: t, mouse, mode: null };
-  if (!mouse) gesture.timer = setTimeout(() => startTaskDrag(), LONG_PRESS_MS);
+  if (card && !mouse) gesture.timer = setTimeout(() => startTaskDrag(), LONG_PRESS_MS);
 });
 
 window.addEventListener("pointermove", (e) => {
@@ -1271,15 +1272,12 @@ window.addEventListener("pointermove", (e) => {
     clearTimeout(g.timer);
     if (g.zoomTap) { g.mode = "none"; return; }
     if (g.mouse) startTaskDrag();
-    else if (Math.abs(dx) > Math.abs(dy)) {
-      g.mode = "swipe";
-      g.card.classList.add("swiping");
-    } else g.mode = "scroll"; // the browser scrolls the list (touch-action: pan-y)
+    else if (Math.abs(dx) > Math.abs(dy)) g.mode = wideScreen.matches ? "none" : "page";
+    else g.mode = "scroll"; // the browser scrolls the list (touch-action: pan-y)
   }
-  if (g.mode === "swipe") {
-    g.card.dataset.dir = dx > 0 ? "right" : "left";
-    g.card.querySelector(".pcard-body").style.transform = `translateX(${dx}px)`;
-    g.card.classList.toggle("armed", Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE);
+  if (g.mode === "page") {
+    const col = projBoard.querySelector(".pcol.current");
+    if (col) col.style.transform = `translateX(${dx * 0.4}px)`;
   } else if (g.mode === "drag") {
     moveDragGhost();
   }
@@ -1300,19 +1298,13 @@ function endGesture(e) {
     // was already on screen when the phone's click arrived, so that click landed on whichever
     // popup button was under the finger (Edit or Done; seen on Alex's phone 2026-11-17).
     tapTask = g.task;
-  } else if (g.mode === "swipe") {
-    const body = g.card.querySelector(".pcard-body");
-    if (!cancelled && Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE) {
-      // Slide the rest of the way off, then finish it.
-      body.style.transition = "transform 0.18s ease-in";
-      body.style.transform = `translateX(${Math.sign(dx) * g.card.offsetWidth * 1.1}px)`;
-      g.card.classList.add("leaving");
-      setTimeout(() => finishTask(g.task), 160);
-    } else {
-      body.style.transition = "transform 0.18s ease-out";
-      body.style.transform = "";
-      setTimeout(() => g.card.classList.remove("swiping", "armed"), 180);
-    }
+  } else if (g.mode === "page") {
+    const col = projBoard.querySelector(".pcol.current");
+    if (col) col.style.transform = "";
+    const groups = groupsOf(currentProject());
+    const i = groups.findIndex((x) => x.id === groupId);
+    const next = !cancelled && Math.abs(dx) > SWIPE_GROUP ? groups[i + (dx < 0 ? 1 : -1)] : null;
+    if (next) setGroup(next.id, dx < 0 ? "right" : "left");
   } else if (g.mode === "drag") {
     endTaskDrag(g, cancelled);
   }

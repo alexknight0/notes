@@ -511,8 +511,8 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .proj-remaining { font-size: 0.82rem; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* The map: one tile per group with its count and a line per task; the group on screen is outlined.
-   At the bottom, under the Add button, where the thumb is (Alex asked 2026-11-17). */
-.proj-map { flex: none; display: flex; gap: 6px; margin: 0 var(--pad) var(--pad); }
+   At the top again since 2026-11-17 (it was briefly at the bottom under Add). */
+.proj-map { flex: none; display: flex; gap: 6px; margin: 0.6rem var(--pad) 0; }
 /* Each tile: a small card with the group's colour dot, name, count and one dot per task. The group
    on screen is filled with its colour (flat, no gradient). */
 /* Name across the top (full width, so it isn't cut short); task dots and the count below it. */
@@ -560,8 +560,8 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .proj-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .proj-stage[hidden] { display: none; }
 /* Columns. Phones: only the current group, filling the view. pan-y: vertical swipes scroll the
-   list natively, sideways ones on a task come to app.js (finish it); pinch-zoom still works. */
-.proj-board { flex: 1; min-height: 0; display: flex; padding: 0.7rem var(--pad) 0.5rem; touch-action: pan-y pinch-zoom; }
+   list natively, sideways ones come to app.js (change group); pinch-zoom still works. */
+.proj-board { flex: 1; min-height: 0; display: flex; padding: 0.7rem var(--pad) var(--pad); touch-action: pan-y pinch-zoom; }
 /* Pinch-zoomed (set by app.js): swipes pan the zoomed page instead of finishing tasks. */
 #view-projects.zoomed .proj-board { touch-action: auto; }
 .pcol {
@@ -594,20 +594,11 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .plist > .psec:first-child { margin-top: 0; }
 .pempty { color: var(--muted); font-size: 0.85rem; padding: 0.3rem 0.4rem; }
 
-/* A task card. The body slides sideways over a green "✓ Done" layer while being swiped. */
+/* A task card. */
 .pcard {
   position: relative; border-radius: 12px; overflow: hidden; outline-offset: 2px;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: pointer;
 }
-.pcard-under {
-  position: absolute; inset: 0; display: none; align-items: center; padding: 0 1rem;
-  background: color-mix(in srgb, #2da44e 55%, var(--surface)); color: white; font-weight: 700; font-size: 0.85rem;
-  transition: background-color 0.12s;
-}
-.pcard.swiping .pcard-under { display: flex; }
-.pcard[data-dir="left"] .pcard-under { justify-content: flex-end; }
-.pcard.armed .pcard-under { background: #2da44e; }
-.pcard.leaving { transition: opacity 0.18s; opacity: 0.6; }
 .pcard-body {
   position: relative; display: flex; align-items: flex-start; gap: 0.5rem;
   padding: 0.7rem 0.8rem; border: 1px solid var(--line); border-radius: 12px;
