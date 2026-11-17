@@ -674,8 +674,7 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 .ptask-view { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 /* Modes (data-mode, set by app.js): view = read with an Edit button; edit / new = the editor. */
 #ptask-edit[data-mode="view"] :is(#ptask-text, #ptask-groups, .ptask-actions),
-#ptask-edit:not([data-mode="view"]) :is(#ptask-view, .ptask-fab),
-#ptask-edit:not([data-mode="view"]) .ptask-close { display: none; }
+#ptask-edit:not([data-mode="view"]) :is(#ptask-view, .ptask-fab) { display: none; }
 /* An existing task (read or edited): as tall as its text needs, up to nearly the whole screen,
    then the text scrolls inside. Phones: a sheet at the bottom, so Close and Edit are by the thumb. */
 /* At least 58% of the screen tall, so (centred) its buttons are always in the bottom quarter. */
@@ -687,7 +686,8 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 #ptask-edit:not([data-mode="view"]) .ptask-viewbar { display: none; }
 .ptask-viewbar { flex-wrap: nowrap; margin-top: 0.25rem; }
 /* Done, Edit and Close: one size (Alex: Done/Edit looked bigger than Close). */
-.ptask-viewbar .pbtn { padding: 0.65rem 1rem; border-radius: 14px; font-size: 0.95rem; line-height: 1.2; box-shadow: none; }
+.ptask-actions { flex-wrap: nowrap; gap: 0.45rem; margin-top: 0.25rem; }
+.ptask-viewbar .pbtn, .ptask-actions .pbtn { padding: 0.65rem 1rem; border-radius: 14px; font-size: 0.95rem; line-height: 1.2; box-shadow: none; }
 .ptask-viewbar .pbtn span { font-size: 1em; line-height: 1; font-weight: 700; margin-right: 0.15rem; }
 .ptask-viewbar { gap: 0.45rem; }
 /* Done: green, like the swipe-to-finish layer and the hover ✓. */

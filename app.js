@@ -1368,7 +1368,9 @@ function openTask({ task = null, group = null, pick = false }) {
   if (!editingTask.group) return;
   ptaskDialog.returnValue = "";
   $("ptask-text").value = task?.text ?? "";
-  ptaskDialog.classList.toggle("full", Boolean(task));
+  // Every task popup (read, edit, and new from "+ Add") has the same big layout (Alex 2026-11-17:
+  // the Add popup should look like the editing one).
+  ptaskDialog.classList.add("full");
   setTaskMode(task ? "view" : "new");
   editingTask.start = taskEditorState();
   ptaskDialog.showModal();
@@ -1385,7 +1387,7 @@ function setTaskMode(mode) {
   const title = $("ptask-title");
   title.dataset.g = groupColor(g);
   const gname = el("span", { class: "gname", textContent: g?.name ?? "" });
-  if (mode === "new") title.replaceChildren("New task in ", gname);
+  if (mode === "new") title.replaceChildren(gname, el("small", { textContent: "new task" }));
   else title.replaceChildren(gname, el("small", { textContent: task.createdAt ? `added ${shortDate(toDate(task.createdAt))}` : "" }));
   $("ptask-view").textContent = task?.text ?? "";
   const chips = mode === "edit" || (mode === "new" && editingTask.pick);
