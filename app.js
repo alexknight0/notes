@@ -207,10 +207,16 @@ const ADD_FORMS = {
   thoughts: { form: "thought-form", word: "thought" },
   facts: { form: "fact-form", word: "fact" },
 };
-$("header-add").addEventListener("click", () => {
+const openAdd = () => {
   const add = ADD_FORMS[currentView()];
   if (add) $(add.form).requestSubmit();
-});
+};
+$("header-add").addEventListener("click", openAdd);
+// Phones: the floating "+ Add" in each view (styled like Projects' one) does the same.
+for (const b of document.querySelectorAll(".fab[data-add]")) {
+  b.hidden = false;
+  b.addEventListener("click", openAdd);
+}
 
 // ---------- scratch pad ----------
 
@@ -690,6 +696,7 @@ function openEditor(note) {
   editing = { note, image: note.image ?? null, tags: [...(note.tags ?? [])] };
   $("edit-tag-input").value = "";
   dialog.returnValue = "";
+  dialog.classList.toggle("new", !note.id); // a new note gets a big, nearly full-screen box
   $("edit-type").value = note.type;
   $("edit-text").value = note.text;
   $("edit-due").value = toLocalInput(toDate(note.due));
@@ -1914,8 +1921,14 @@ import("https://cdn.jsdelivr.net/gh/alexknight0/pages-common@1.0.0/update.js")
     }
   });
 
-// Opened from a home-screen shortcut (e.g. ./#tasks): jump straight into the capture box.
-if (location.hash) {
-  const target = { tasks: "task-text", ideas: "idea-text", facts: "fact-text", thoughts: "thought-text", scratch: "scratch" }[currentView()];
-  if (target) setTimeout(() => $(target).focus(), 300);
+// Opened from a home-screen shortcut (./?new#tasks, manifest.webmanifest): straight into a new
+// note of that type (the scratch pad: into the pad). ?new is dropped at once, so a reload or a
+// plain #tasks link just shows the view. (Shortcuts were ./#tasks before 2026-11-17; Android
+// picks up the new URLs when it next updates the installed app.)
+if (new URLSearchParams(location.search).has("new")) {
+  history.replaceState(null, "", location.pathname + location.hash);
+  setTimeout(() => {
+    if (currentView() === "scratch") scratch.focus();
+    else if (ADD_FORMS[currentView()] && !$("app").hidden && !dialog.open) openAdd();
+  }, 300);
 }

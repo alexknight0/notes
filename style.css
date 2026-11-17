@@ -115,16 +115,26 @@ h2 {
 
 .wide-only { display: none; } /* text shown only on wide screens with a mouse */
 
-/* Wide screens with a mouse: input at the top, like a normal page. */
+/* No inline text box anywhere (phones too since 2026-11-17, Alex asked for Projects-style Add
+   buttons on every page): Add opens the edit dialog, which has a big box to write in. The due
+   chips, tag dropdown and photo button go too; due date, tags and photo are set in the dialog.
+   Docks with nothing else in them go; the facts dock keeps just its search box. */
+.dock textarea, .dock .file-btn, .dock .dock-options { display: none; }
+#task-form, #idea-form, #thought-form, #fact-form .row { display: none; }
+
+/* Phones: the floating "+ Add" bottom-right (same look as Projects' .proj-fab, below). */
+.view { position: relative; }
+.fab { right: calc(var(--pad) + 0.4rem); bottom: 1rem; }
+#fact-form { position: relative; }
+#fact-form .fab { bottom: calc(100% + 1rem); } /* just above the search box */
+.view:has(.fab) .scroll { padding-bottom: 5rem; } /* the last note can scroll out from under it */
+
+/* Wide screens with a mouse: input at the top, like a normal page; Add is in the title row. */
 @media (min-width: 700px) and (pointer: fine) {
   .dock { order: -1; border-top: none; padding-top: var(--pad); background: none; }
-  /* No inline text box: Add opens the edit dialog, which has a big box to write in.
-     The due chips and tag dropdown are hidden too; due date and tags are set in the dialog. */
-  .dock textarea, .dock .file-btn, .dock .dock-options { display: none; }
   .wide-only { display: inline; }
-  /* The Add button lives in the title row (#header-add), so docks with nothing else in them
-     go; the facts dock keeps just its search box. */
-  #task-form, #idea-form, #thought-form, #fact-form .row { display: none; }
+  .fab { display: none; }
+  .view:has(.fab) .scroll { padding-bottom: var(--pad); }
 }
 #header-add { display: none; margin-left: 0.4rem; padding: 0.35rem 0.85rem; font-size: 0.9rem; }
 @media (min-width: 700px) and (pointer: fine) { #header-add { display: inline-block; } }
@@ -447,6 +457,14 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 #edit-form, .pdialog { display: flex; flex-direction: column; gap: 0.75rem; }
 /* Big writing box (Alex asked 2026-11-03), bigger still on desktop. */
 #edit-text { min-height: 13rem; }
+/* A new note (from + Add) on phones: nearly the whole screen, the text box takes what's left.
+   dvh follows the keyboard (interactive-widget=resizes-content), so it stays above it. */
+@media not ((min-width: 700px) and (pointer: fine)) {
+  #edit.new { width: calc(100vw - 1.25rem); height: calc(100dvh - 2.5rem); max-height: none; }
+  #edit.new[open] { display: flex; flex-direction: column; }
+  #edit.new #edit-form { flex: 1; min-height: 0; }
+  #edit.new #edit-text { flex: 1; min-height: 6rem; resize: none; }
+}
 @media (min-width: 700px) and (pointer: fine) {
   dialog { width: min(48rem, calc(100vw - 4rem)); }
   #edit-text { min-height: 50vh; }
@@ -594,13 +612,13 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 
 /* The one Add button, floating bottom-right by your thumb (no row of its own), just above the map.
    The Edit button of an open task looks the same. */
-.proj-fab, .ptask-fab {
+.proj-fab, .ptask-fab, .fab {
   position: absolute; z-index: 5;
   padding: 0.75rem 1.15rem; border-radius: 16px; font-size: 0.95rem;
   box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 4px rgb(0 0 0 / 0.12);
 }
 .proj-fab { right: calc(var(--pad) + 0.4rem); bottom: 1rem; }
-.proj-fab span, .ptask-fab span { font-size: 1.15rem; line-height: 1; font-weight: 500; margin-right: 0.15rem; }
+.proj-fab span, .ptask-fab span, .fab span { font-size: 1.15rem; line-height: 1; font-weight: 500; margin-right: 0.15rem; }
 /* "Done · See finished · Undo" bar after finishing a task; covers the Add button for a few seconds. */
 .proj-toast {
   position: absolute; left: var(--pad); right: var(--pad); bottom: 1rem; z-index: 6;

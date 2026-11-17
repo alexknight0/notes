@@ -38,8 +38,10 @@
 
   <p id="signed-out-msg" class="empty" hidden>Sign in to see your notes.</p>
 
-  <!-- Each view = a scrolling area + an input dock. On phones the dock sits at the
-       bottom (thumb reach); on wide screens with a mouse it moves to the top (style.css). -->
+  <!-- Each view = a scrolling area + an input dock. The docks' text boxes are hidden (since
+       2026-11-17 on phones too): on phones a floating "+ Add" (.fab) submits the empty dock form,
+       which opens the big editor; on wide screens the title-row Add does the same. The facts dock
+       keeps its search box (at the bottom on phones, the top on wide screens). -->
   <main id="app" hidden>
     <!-- 3. Scratch pad -->
     <section id="view-scratch" class="view" data-title="Scratch pad">
@@ -63,6 +65,7 @@
           <ul id="task-done" class="list"></ul>
         </details>
       </div>
+      <button type="button" class="primary fab" data-add hidden><span aria-hidden="true">+</span> Add</button>
       <form class="dock" id="task-form" autocomplete="off">
         <div class="row due-chips dock-options" role="group" aria-label="Due">
           <button type="button" class="chip" data-due="today">Today</button>
@@ -96,6 +99,7 @@
           <ul id="idea-archived" class="list"></ul>
         </details>
       </div>
+      <button type="button" class="primary fab" data-add hidden><span aria-hidden="true">+</span> Add</button>
       <form class="dock" id="idea-form" autocomplete="off">
         <div class="row dock-options">
           <select id="idea-tag" aria-label="Tag for new ideas"></select>
@@ -114,6 +118,7 @@
         <ul id="fact-list" class="list"></ul>
       </div>
       <form class="dock" id="fact-form" autocomplete="off">
+  <button type="button" class="primary fab" data-add hidden><span aria-hidden="true">+</span> Add</button>
         <input id="fact-search" type="search" placeholder="🔍 Search facts…" aria-label="Search facts" enterkeyhint="search">
         <div class="row" id="fact-image-row" hidden>
           <img id="fact-image-preview" class="thumb" alt="">
@@ -167,6 +172,7 @@
           <ul id="thought-archived" class="list"></ul>
         </details>
       </div>
+      <button type="button" class="primary fab" data-add hidden><span aria-hidden="true">+</span> Add</button>
       <form class="dock" id="thought-form" autocomplete="off">
         <div class="row">
           <textarea id="thought-text" rows="1" placeholder="Something to think about later…" aria-label="Thought"></textarea>
