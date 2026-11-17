@@ -687,19 +687,21 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 #ptask-edit:not([data-mode="view"]) .ptask-close { display: none; }
 /* An existing task (read or edited): as tall as its text needs, up to nearly the whole screen,
    then the text scrolls inside. Phones: a sheet at the bottom, so Close and Edit are by the thumb. */
-#ptask-edit.full { width: calc(100vw - 1.25rem); max-height: calc(100dvh - 2.5rem); padding: 1rem 1.1rem; }
+/* At least 58% of the screen tall, so (centred) its buttons are always in the bottom quarter. */
+#ptask-edit.full { width: calc(100vw - 1.25rem); min-height: 58dvh; max-height: calc(100dvh - 2.5rem); padding: 1rem 1.1rem; }
 #ptask-edit.full[open] { display: flex; flex-direction: column; }
-#ptask-edit.full form { flex: 0 1 auto; min-height: 0; }
-#ptask-edit.full .ptask-view { flex: 0 1 auto; min-height: 0; overflow-y: auto; outline: none; }
-#ptask-edit.full #ptask-text { flex: 0 1 auto; min-height: 7rem; resize: none; field-sizing: content; }
+#ptask-edit.full form { flex: 1 1 auto; min-height: 0; }
+#ptask-edit.full .ptask-view { flex: 1 1 auto; min-height: 0; overflow-y: auto; outline: none; }
+#ptask-edit.full #ptask-text { flex: 1 1 auto; min-height: 7rem; resize: none; field-sizing: content; }
 #ptask-edit:not([data-mode="view"]) .ptask-viewbar { display: none; }
 .ptask-viewbar { flex-wrap: nowrap; margin-top: 0.25rem; }
-.ptask-close-big, .ptask-done-big { padding: 0.75rem 1.05rem; border-radius: 16px; font-size: 0.95rem; }
+/* Done, Edit and Close: one size (Alex: Done/Edit looked bigger than Close). */
+.ptask-viewbar .pbtn { padding: 0.65rem 1rem; border-radius: 14px; font-size: 0.95rem; line-height: 1.2; box-shadow: none; }
+.ptask-viewbar .pbtn span { font-size: 1em; line-height: 1; font-weight: 700; margin-right: 0.15rem; }
 .ptask-viewbar { gap: 0.45rem; }
 /* Done: green, like the swipe-to-finish layer and the hover ✓. */
-.ptask-done-big { background: #2da44e; color: white; box-shadow: 0 4px 12px rgb(45 164 78 / 0.35); }
+.ptask-done-big { background: #2da44e; color: white; }
 .ptask-done-big:hover { background: #24873f; }
-.ptask-done-big span { font-weight: 800; margin-right: 0.1rem; }
 .chips { gap: 0.4rem; }
 .pchip.active { background: var(--g); border-color: var(--g); }
 .done-list { max-height: 55dvh; overflow-y: auto; }

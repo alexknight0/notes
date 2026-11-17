@@ -1235,7 +1235,14 @@ document.addEventListener("keydown", (e) => {
 const updateProjZoom = () => $("view-projects").classList.toggle("zoomed", zoomed());
 window.visualViewport?.addEventListener("resize", updateProjZoom);
 
+let tapTask = null; // tapped task, opened by the click event that follows the tap
+projBoard.addEventListener("click", () => {
+  const t = tapTask;
+  tapTask = null;
+  if (t) openTask({ task: t });
+});
 projBoard.addEventListener("pointerdown", (e) => {
+  tapTask = null;
   if (e.button !== 0 || gesture || e.target.closest("button")) return;
   if (e.pointerType !== "mouse" && zoomed()) { // a tap still opens the task
     const card = e.target.closest(".pcard");
@@ -1289,7 +1296,10 @@ function endGesture(e) {
   const dx = g.x - g.x0;
   const cancelled = e.type === "pointercancel";
   if (!g.mode && g.card && !cancelled) {
-    openTask({ task: g.task }); // a tap or click
+    // A tap or click: open it on the click that follows, not now. Opened on pointerup, the popup
+    // was already on screen when the phone's click arrived, so that click landed on whichever
+    // popup button was under the finger (Edit or Done; seen on Alex's phone 2026-11-17).
+    tapTask = g.task;
   } else if (g.mode === "swipe") {
     const body = g.card.querySelector(".pcard-body");
     if (!cancelled && Math.abs(dx) > g.card.offsetWidth * SWIPE_DONE) {
