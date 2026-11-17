@@ -860,7 +860,7 @@ const SWIPE_DONE = 0.3; // a task swiped this fraction of its width is finished
 const GESTURE_SLOP = 8; // px a finger/mouse must move before a press counts as a gesture
 const LONG_PRESS_MS = 450; // hold a task this long (without moving) to pick it up
 const TOAST_MS = 5000;
-const MAP_BARS = 6; // at most this many task lines per group in the map
+const MAP_BARS = 12; // at most this many task dots per group in the map
 const wideScreen = window.matchMedia("(min-width: 700px) and (pointer: fine)");
 const projBoard = $("proj-board");
 
@@ -915,8 +915,6 @@ function setGroup(id, enterFrom) {
   }
 }
 
-// How long a task's line in the map is: longer text, longer line.
-const barWidth = (t) => `${Math.min(100, 35 + (t.text?.length ?? 0) * 1.6)}%`;
 
 // The small label over each run of tasks of the same age (newest first).
 function ageLabel(date, now = new Date()) {
@@ -955,12 +953,8 @@ function renderProjects() {
         ariaLabel: `${g.name}: ${tasks.length} task${tasks.length === 1 ? "" : "s"}`,
         onclick: () => setGroup(g.id, groups.indexOf(g) > groups.indexOf(current) ? "right" : "left"),
       },
-      el("span", { class: "ptile-label" }, el("span", { class: "ptile-name", textContent: g.name }), el("span", { textContent: tasks.length })),
-      el("span", { class: "ptile-bars" }, ...tasks.slice(0, MAP_BARS).map((t) => {
-        const bar = el("i");
-        bar.style.width = barWidth(t);
-        return bar;
-      })));
+      el("span", { class: "ptile-label" }, el("span", { class: "ptile-name", textContent: g.name }), el("span", { class: "ptile-count", textContent: tasks.length })),
+      el("span", { class: "ptile-bars", ariaHidden: "true" }, ...tasks.slice(0, MAP_BARS).map(() => el("i"))));
       tile.dataset.group = g.id;
       tile.dataset.g = groupColor(g);
       if (g.id === groupId) tile.ariaCurrent = "true";
@@ -1418,6 +1412,12 @@ $("ptask-cancel").addEventListener("click", () => {
 });
 $("ptask-close").addEventListener("click", () => cancelTaskEditor());
 $("ptask-close-bottom").addEventListener("click", () => cancelTaskEditor());
+// Done in the popup: close it and finish the task (the Undo bar shows, as after a swipe).
+$("ptask-done").addEventListener("click", () => {
+  const t = editingTask?.task;
+  ptaskDialog.close("cancel");
+  if (t) finishTask(t);
+});
 function syncTaskGroups() {
   const groups = groupsOf(currentProject());
   $("ptask-groups").replaceChildren(...groups.map((g) => {
