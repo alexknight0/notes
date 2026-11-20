@@ -771,3 +771,6 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 @keyframes boot-spin { to { transform: rotate(360deg); } }
 .boot-slow { visibility: hidden; animation: boot-slow 0s 10s forwards; }
 @keyframes boot-slow { to { visibility: visible; } }
+
+.edit-status { text-align: right; font-size: 0.85rem; color: var(--muted); min-height: 1.2em; margin-bottom: -0.4rem; }
+#edit-close:disabled { opacity: 0.5; }

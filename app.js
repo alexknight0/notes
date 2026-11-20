@@ -693,7 +693,11 @@ const dialog = $("edit");
 let editing = null; // {note, image, tags}; a note without an id is a new note
 
 function openEditor(note) {
-  editing = { note, image: note.image ?? null, tags: [...(note.tags ?? [])] };
+  editing = { note, image: note.image ?? null, tags: [...(note.tags ?? [])], created: false };
+  clearTimeout(saveTimer);
+  saveChain = Promise.resolve();
+  running = 0;
+  saveTimer = 0;
   $("edit-tag-input").value = "";
   dialog.returnValue = "";
   dialog.classList.toggle("new", !note.id); // a new note gets a big, nearly full-screen box
@@ -701,11 +705,78 @@ function openEditor(note) {
   $("edit-text").value = note.text;
   $("edit-due").value = toLocalInput(toDate(note.due));
   $("edit-delete").hidden = !note.id;
-  $("edit-save").textContent = note.id ? "Save" : "Add";
   syncEditorFields();
+  setEditorStatus("");
   editing.start = editorState();
   dialog.showModal();
   if (!note.id) $("edit-text").focus();
+}
+
+// ---- autosave ----
+// Changes are written ~0.6 s after the last edit. A new note is created on its first non-empty
+// save and updated from then on. Writes run one after another so an older one can't land last.
+const AUTOSAVE_MS = 600;
+const WRITE_WAIT_MS = 3000; // offline, Firestore only answers once the server has the write; it is in the local cache by now
+let saveTimer = 0; // non-zero while waiting for the user to stop typing
+let saveChain = Promise.resolve();
+let running = 0; // writes in progress
+
+const editorBusy = () => saveTimer !== 0 || running > 0;
+function setEditorStatus(text) {
+  $("edit-status").textContent = text;
+  $("edit-close").disabled = editorBusy();
+}
+function scheduleSave() {
+  if (!editing) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(queueSave, AUTOSAVE_MS);
+  setEditorStatus("Saving…");
+}
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  const ed = editing;
+  running++;
+  setEditorStatus("Saving…");
+  saveChain = saveChain.then(() => writeEditor(ed)).catch(() => {}).then(() => {
+    running--;
+    if (editing === ed) setEditorStatus(editorBusy() ? "Saving…" : "Saved");
+  });
+}
+const withTimeout = (p) => Promise.race([p, new Promise((r) => setTimeout(r, WRITE_WAIT_MS))]);
+
+async function writeEditor(ed) {
+  if (ed !== editing || ed.deleted) return;
+  const type = $("edit-type").value;
+  const text = $("edit-text").value.trim();
+  const due = fromLocalInput($("edit-due").value);
+  const { image, tags } = ed;
+  const note = ed.note;
+  if (!note.id) {
+    if (!text && !(type === "fact" && image)) return; // nothing worth keeping yet
+    const fresh = { type, text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+    if (type === "task") Object.assign(fresh, { due: due ? Timestamp.fromDate(due) : null, done: false });
+    else if (type === "fact") Object.assign(fresh, { image, embedding: null });
+    else { fresh.archived = false; if (type === "idea") fresh.tags = tags; }
+    const ref = doc(notesCol); // id known straight away, even offline
+    ed.note = { id: ref.id, type, text, due, done: false, image, tags };
+    ed.created = true;
+    $("edit-delete").hidden = false;
+    await guard(withTimeout(setDoc(ref, fresh)), "add");
+    if (type === "fact") backfillEmbeddings();
+    return;
+  }
+  const changes = { type, text, image, updatedAt: serverTimestamp() };
+  if (type === "task") {
+    changes.due = due ? Timestamp.fromDate(due) : null;
+    changes.done = note.type === "task" ? Boolean(note.done) : false;
+  }
+  if ((type === "thought" || type === "idea") && type !== note.type) changes.archived = false;
+  if (type === "idea") changes.tags = tags;
+  if (text !== note.text || type !== note.type) changes.embedding = null; // recomputed by backfill
+  ed.note = { ...note, type, text, image, tags, due, done: changes.done ?? note.done };
+  await guard(withTimeout(updateDoc(doc(notesCol, note.id), changes)), "save");
+  backfillEmbeddings();
 }
 
 // Everything the user can change in the editor, to tell whether there are unsaved changes.
@@ -715,22 +786,39 @@ function editorState() {
     editing.image, editing.tags, $("edit-tag-input").value.trim(),
   ]);
 }
-const editorChanged = () => editing && editorState() !== editing.start;
 
-// Escape asks before throwing away changes. Handled on keydown so the dialog's own
-// cancel never fires; the cancel listener covers Android's back gesture.
-function cancelEditor() {
-  if (!editorChanged() || confirm("Discard your changes?")) dialog.close("cancel");
+// Close waits for any save in progress (the button is disabled meanwhile). Escape and Android's
+// back gesture do the same: there is nothing to discard any more.
+async function closeEditor() {
+  if (!editing) return dialog.close();
+  if ($("edit-tag-input").value.trim()) addEditorTag(); // typed but not yet added
+  clearTimeout(saveTimer);
+  if (saveTimer) queueSave(); // a change is still waiting for its turn
+  await saveChain;
+  const ed = editing;
+  // A new task with no due date takes one from its text ("dentist fri 3pm"), like quick-add.
+  if (ed.created && ed.note.type === "task" && !ed.note.due && !ed.deleted) {
+    const parsed = parseDue(ed.note.text);
+    if (parsed) {
+      await guard(withTimeout(updateDoc(doc(notesCol, ed.note.id), {
+        text: parsed.text, due: Timestamp.fromDate(parsed.date), updatedAt: serverTimestamp(),
+      })), "save");
+    }
+  }
+  if (ed.created && ed.note.type === "task") { $("task-form").reset(); dueTouched = false; setDue(null); }
+  dialog.close();
 }
+$("edit-form").addEventListener("submit", (e) => { e.preventDefault(); if (!$("edit-close").disabled) closeEditor(); });
 dialog.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || e.isComposing) return;
   e.preventDefault();
-  cancelEditor();
+  if (!$("edit-close").disabled) closeEditor();
 });
 dialog.addEventListener("cancel", (e) => {
   e.preventDefault();
-  cancelEditor();
+  if (!$("edit-close").disabled) closeEditor();
 });
+dialog.addEventListener("close", () => { editing = null; });
 
 // Tab in the text box indents with 4 spaces instead of moving to the next field.
 $("edit-text").addEventListener("keydown", (e) => {
@@ -748,7 +836,7 @@ function syncEditorFields() {
   $("edit-tags-wrap").hidden = type !== "idea";
   $("edit-tags").replaceChildren(...editing.tags.map((t) => el("button", {
     type: "button", class: "tag", textContent: `${t} ✕`, ariaLabel: `Remove tag ${t}`,
-    onclick: () => { editing.tags = editing.tags.filter((x) => x !== t); syncEditorFields(); },
+    onclick: () => { editing.tags = editing.tags.filter((x) => x !== t); syncEditorFields(); scheduleSave(); },
   })));
   $("edit-image-wrap").hidden = type !== "fact" && !editing.image;
   $("edit-image").hidden = !editing.image;
@@ -761,7 +849,7 @@ $("edit-type").addEventListener("change", syncEditorFields);
 function addEditorTag() {
   const tag = cleanTag($("edit-tag-input").value);
   $("edit-tag-input").value = "";
-  if (tag && !editing.tags.includes(tag)) editing.tags.push(tag);
+  if (tag && !editing.tags.includes(tag)) { editing.tags.push(tag); scheduleSave(); }
   syncEditorFields();
 }
 $("edit-tag-input").addEventListener("keydown", (e) => {
@@ -781,61 +869,25 @@ $("edit-image-file").addEventListener("change", async (e) => {
   editing.image = await compressImage(file);
   e.target.value = "";
   syncEditorFields();
+  scheduleSave();
 });
-$("edit-image-remove").addEventListener("click", () => { editing.image = null; syncEditorFields(); });
+$("edit-image-remove").addEventListener("click", () => { editing.image = null; syncEditorFields(); scheduleSave(); });
 
 $("edit-delete").addEventListener("click", async () => {
   if (!confirm("Delete this note?")) return;
-  const { note } = editing;
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  await saveChain; // let a write in progress finish so it can't re-create the note
+  const ed = editing;
+  ed.deleted = true;
   dialog.close();
-  await guard(deleteDoc(doc(notesCol, note.id)), "delete");
+  await guard(deleteDoc(doc(notesCol, ed.note.id)), "delete");
 });
 
-dialog.addEventListener("close", async () => {
-  if (dialog.returnValue !== "save" || !editing) return;
-  if ($("edit-tag-input").value.trim()) addEditorTag(); // typed but not yet added
-  const { note, image, tags } = editing;
-  const type = $("edit-type").value;
-  const text = $("edit-text").value.trim();
-  const due = fromLocalInput($("edit-due").value);
-  dialog.returnValue = "";
-  if (!note.id) {
-    await addFromEditor(type, text, due, image, tags);
-    return;
-  }
-  const changes = { type, text, image, updatedAt: serverTimestamp() };
-  if (type === "task") {
-    changes.due = due ? Timestamp.fromDate(due) : null;
-    changes.done = note.type === "task" ? Boolean(note.done) : false;
-  }
-  if ((type === "thought" || type === "idea") && type !== note.type) changes.archived = false;
-  if (type === "idea") changes.tags = tags;
-  if (text !== note.text || type !== note.type) changes.embedding = null; // recomputed by backfill
-  await guard(updateDoc(doc(notesCol, note.id), changes), "save");
-  backfillEmbeddings();
-});
-
-// Add a new note written in the editor dialog (opened by Add with an empty box).
-async function addFromEditor(type, text, due, image, tags) {
-  if (!text && !(type === "fact" && image)) return;
-  const note = { type, text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
-  if (type === "task") {
-    // Like the quick-add box: with no due date set, take it from the text ("dentist fri 3pm").
-    const parsed = due ? null : parseDue(text);
-    if (parsed) { note.text = parsed.text; due = parsed.date; }
-    Object.assign(note, { due: due ? Timestamp.fromDate(due) : null, done: false });
-    $("task-form").reset();
-    dueTouched = false;
-    setDue(null);
-  } else if (type === "fact") {
-    Object.assign(note, { image, embedding: null });
-  } else {
-    note.archived = false;
-    if (type === "idea") note.tags = tags;
-  }
-  await guard(addDoc(notesCol, note), "add");
-  if (type === "fact") backfillEmbeddings();
-}
+// Any change in the editor triggers an autosave.
+$("edit-text").addEventListener("input", scheduleSave);
+$("edit-due").addEventListener("change", scheduleSave);
+$("edit-type").addEventListener("change", scheduleSave);
 
 // ---------- projects ----------
 // Each project has coloured groups in priority order (e.g. Now / Next / Later) holding to-do
