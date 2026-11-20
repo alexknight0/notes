@@ -508,6 +508,8 @@ dialog::backdrop { background: rgb(10 10 20 / 0.45); backdrop-filter: blur(2px);
 }
 .proj-pick #proj-name { overflow: hidden; text-overflow: ellipsis; }
 .proj-pick .caret { color: var(--muted); font-size: 0.8rem; }
+.proj-search { flex: none; display: block; width: auto; margin: 0.6rem var(--pad) 0; }
+.proj-search[hidden] { display: none; }
 .proj-remaining { font-size: 0.82rem; font-weight: 600; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* The map: one tile per group with its count and a line per task; the group on screen is outlined.

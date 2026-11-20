@@ -946,7 +946,14 @@ function groupOfTask(t, groups) {
 const createdMs = (t) => toDate(t.createdAt)?.getTime() ?? 0;
 const byNewest = (a, b) => createdMs(b) - createdMs(a);
 const projectTasks = (p) => ptasks.filter((t) => t.project === p.id);
-const openTasksIn = (p, gid) => projectTasks(p).filter((t) => !t.done && groupOfTask(t, groupsOf(p)) === gid).sort(byNewest);
+// Search box on the Projects page: fuzzy-matches the open tasks of the current project (keyword
+// only, no model). projMatch maps task id -> rank while a query is active (set by renderProjects).
+let projQuery = "";
+let projMatch = null;
+const openTasksIn = (p, gid) => {
+  const tasks = projectTasks(p).filter((t) => !t.done && groupOfTask(t, groupsOf(p)) === gid);
+  return projMatch ? tasks.filter((t) => projMatch.has(t.id)).sort((a, b) => projMatch.get(a.id) - projMatch.get(b.id)) : tasks.sort(byNewest);
+};
 const finishedTasks = (p) => projectTasks(p).filter((t) => t.done)
   .sort((a, b) => (toDate(b.doneAt)?.getTime() ?? 0) - (toDate(a.doneAt)?.getTime() ?? 0));
 
@@ -986,7 +993,7 @@ function renderProjects() {
   if (gesture?.mode) { renderPending = true; return; } // don't yank a card out from under a finger
   renderPending = false;
   const p = currentProject();
-  for (const id of ["proj-head", "proj-map", "proj-stage"]) $(id).hidden = !p;
+  for (const id of ["proj-head", "proj-search", "proj-map", "proj-stage"]) $(id).hidden = !p;
   $("proj-empty").hidden = Boolean(p);
   $("proj-add").hidden = !p || !currentGroup(p);
   if (!p) return;
@@ -995,8 +1002,14 @@ function renderProjects() {
   const current = currentGroup(p);
   groupId = current?.id ?? null;
   const open = projectTasks(p).filter((t) => !t.done);
+  projMatch = projQuery ? new Map(rank(open, projQuery, null).map((t, i) => [t.id, i])) : null;
+  // On phones only one group shows; if it has no matches, move to the first group that does.
+  if (projMatch && groupId && !openTasksIn(p, groupId).length) {
+    const hit = groups.find((g) => openTasksIn(p, g.id).length);
+    if (hit) { groupId = hit.id; localStorage.setItem(GROUP_KEY, hit.id); }
+  }
   $("proj-name").textContent = p.name || "Untitled project";
-  $("proj-remaining").textContent = `${open.length} remaining`;
+  $("proj-remaining").textContent = projMatch ? `${projMatch.size} of ${open.length}` : `${open.length} remaining`;
 
   // The map: every group with its count and a short line per task; the one on screen is outlined.
   $("proj-map").replaceChildren(
@@ -1026,8 +1039,8 @@ function renderProjects() {
     const list = el("ul", { class: "plist" });
     let label = null;
     for (const t of tasks) {
-      const l = ageLabel(toDate(t.createdAt), now);
-      if (l !== label) list.append(el("li", { class: "psec", ariaHidden: "true", textContent: (label = l) }));
+      const l = projMatch ? null : ageLabel(toDate(t.createdAt), now); // ranked results aren't grouped by age
+      if (l && l !== label) list.append(el("li", { class: "psec", ariaHidden: "true", textContent: (label = l) }));
       list.append(taskCard(t));
     }
     if (!tasks.length) list.append(el("li", { class: "pempty", textContent: "Nothing here" }));
@@ -1047,6 +1060,15 @@ function renderProjects() {
   for (const c of projBoard.querySelectorAll(".pcol")) if (scrolled.get(c.dataset.group)) c.scrollTop = scrolled.get(c.dataset.group);
   showRestored();
 }
+
+$("proj-search").addEventListener("input", () => {
+  projQuery = $("proj-search").value.trim();
+  renderProjects();
+});
+$("proj-search").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); e.target.blur(); }
+  if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; projQuery = ""; renderProjects(); }
+});
 
 function taskCard(t) {
   const card = el("li", { class: "pcard", tabIndex: 0, ariaLabel: `${t.text}. Enter opens, x finishes.` },
