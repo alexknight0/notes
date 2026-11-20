@@ -993,7 +993,7 @@ function renderProjects() {
   if (gesture?.mode) { renderPending = true; return; } // don't yank a card out from under a finger
   renderPending = false;
   const p = currentProject();
-  for (const id of ["proj-head", "proj-search", "proj-map", "proj-stage"]) $(id).hidden = !p;
+  for (const id of ["proj-head", "proj-map", "proj-stage"]) $(id).hidden = !p;
   $("proj-empty").hidden = Boolean(p);
   $("proj-add").hidden = !p || !currentGroup(p);
   if (!p) return;
