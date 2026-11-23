@@ -6,7 +6,8 @@
 //                                                   migrated on load by migrateUrgentToTask)
 //                             remindedDue?         (task; = due once its reminder was sent,
 //                                                   written by worker/src/index.js)
-//                             image?, embedding?   (fact; image is a JPEG data URL)
+//                             images?, embedding?  (fact; images = up to 5 JPEG data URLs; old facts
+//                                                   have a single `image` instead, read via imagesOf)
 //                             archived?            (idea, thought)
 //                             tags?                (idea; array of strings) }
 //   users/{uid}/projects/{id} { name, groups: [{id, name, color}], createdAt, updatedAt } — Projects;
@@ -46,7 +47,8 @@ const FIREBASE_CONFIG = {
 const SAVE_DELAY_MS = 800;
 const DEFAULT_DUE_HOUR = 9; // used when a typed date has no time, e.g. "pay rent friday"
 const IMAGE_MAX_SIDE = 1024;
-const IMAGE_MAX_CHARS = 200_000; // data URL length; Firestore docs are capped at 1 MiB
+const IMAGE_MAX_CHARS = 150_000; // data URL length of one photo
+const MAX_IMAGES = 5; // per note; 5 x 150k stays under the 1 MiB Firestore document cap
 
 const app = initializeApp(FIREBASE_CONFIG);
 // Sign-in is kept in localStorage, not Firebase's default IndexedDB: all of Alex's sites share
@@ -131,6 +133,8 @@ function parseDue(text) {
 }
 
 // Downscale and JPEG-compress a photo so it fits comfortably inside a Firestore document.
+const imagesOf = (note) => note.images ?? (note.image ? [note.image] : []);
+
 async function compressImage(file) {
   const bitmap = await createImageBitmap(file);
   let side = IMAGE_MAX_SIDE;
@@ -286,14 +290,17 @@ function noteItem(note, { leading, actions = [], meta, extraClass = "", onTag } 
       el("div", { class: "meta", textContent: meta ?? "" }),
       actions.length ? el("div", { class: "actions", onclick: (e) => e.stopPropagation() }, ...actions) : null)
     : null;
+  const images = imagesOf(note);
+  const thumbs = images.length
+    ? el("div", { class: "thumb-row", onclick: (e) => e.stopPropagation() },
+      ...images.map((src, i) => el("img", { class: "thumb", src, alt: `Photo ${i + 1} of ${images.length}`, onclick: () => openLightbox(images, i) })))
+    : null;
   const body = el("div", { class: "body", onclick: () => openEditor(note) },
     el("div", { class: "text", textContent: note.text }),
+    thumbs,
     tags,
     foot);
-  const thumb = note.image
-    ? el("img", { class: "thumb", src: note.image, alt: "", onclick: () => openEditor(note) })
-    : null;
-  return el("li", { class: extraClass }, leading, thumb, body);
+  return el("li", { class: extraClass }, leading, body);
 }
 
 function fillList(list, items, emptyText) {
@@ -557,33 +564,16 @@ $("task-form").addEventListener("submit", async (e) => {
   }), "add");
 });
 
-let pendingFactImage = null;
-$("fact-image").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  pendingFactImage = await compressImage(file);
-  $("fact-image-preview").src = pendingFactImage;
-  $("fact-image-row").hidden = false;
-});
-function clearFactImage() {
-  pendingFactImage = null;
-  $("fact-image").value = "";
-  $("fact-image-row").hidden = true;
-}
-$("fact-image-clear").addEventListener("click", clearFactImage);
-
 $("fact-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const text = $("fact-text").value.trim();
-  if (!text && !pendingFactImage) {
+  if (!text) {
     openEditor({ type: "fact", text: "" }); // empty Add opens the bigger editor
     return;
   }
-  const image = pendingFactImage;
   $("fact-text").value = "";
-  clearFactImage();
   await guard(addDoc(notesCol, {
-    type: "fact", text, image, embedding: null,
+    type: "fact", text, images: [], embedding: null,
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   }), "add");
   backfillEmbeddings();
@@ -690,10 +680,10 @@ $("fact-search").addEventListener("keydown", (e) => {
 // ---------- edit dialog ----------
 
 const dialog = $("edit");
-let editing = null; // {note, image, tags}; a note without an id is a new note
+let editing = null; // {note, images, tags}; a note without an id is a new note
 
 function openEditor(note) {
-  editing = { note, image: note.image ?? null, tags: [...(note.tags ?? [])], created: false };
+  editing = { note, images: [...imagesOf(note)], tags: [...(note.tags ?? [])], created: false };
   clearTimeout(saveTimer);
   saveChain = Promise.resolve();
   running = 0;
@@ -750,23 +740,23 @@ async function writeEditor(ed) {
   const type = $("edit-type").value;
   const text = $("edit-text").value.trim();
   const due = fromLocalInput($("edit-due").value);
-  const { image, tags } = ed;
+  const { images, tags } = ed;
   const note = ed.note;
   if (!note.id) {
-    if (!text && !(type === "fact" && image)) return; // nothing worth keeping yet
+    if (!text && !(type === "fact" && images.length)) return; // nothing worth keeping yet
     const fresh = { type, text, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
     if (type === "task") Object.assign(fresh, { due: due ? Timestamp.fromDate(due) : null, done: false });
-    else if (type === "fact") Object.assign(fresh, { image, embedding: null });
+    else if (type === "fact") Object.assign(fresh, { images, embedding: null });
     else { fresh.archived = false; if (type === "idea") fresh.tags = tags; }
     const ref = doc(notesCol); // id known straight away, even offline
-    ed.note = { id: ref.id, type, text, due, done: false, image, tags };
+    ed.note = { id: ref.id, type, text, due, done: false, images, tags };
     ed.created = true;
     $("edit-delete").hidden = false;
     await guard(withTimeout(setDoc(ref, fresh)), "add");
     if (type === "fact") backfillEmbeddings();
     return;
   }
-  const changes = { type, text, image, updatedAt: serverTimestamp() };
+  const changes = { type, text, images, image: null, updatedAt: serverTimestamp() };
   if (type === "task") {
     changes.due = due ? Timestamp.fromDate(due) : null;
     changes.done = note.type === "task" ? Boolean(note.done) : false;
@@ -774,7 +764,7 @@ async function writeEditor(ed) {
   if ((type === "thought" || type === "idea") && type !== note.type) changes.archived = false;
   if (type === "idea") changes.tags = tags;
   if (text !== note.text || type !== note.type) changes.embedding = null; // recomputed by backfill
-  ed.note = { ...note, type, text, image, tags, due, done: changes.done ?? note.done };
+  ed.note = { ...note, type, text, images, image: null, tags, due, done: changes.done ?? note.done };
   await guard(withTimeout(updateDoc(doc(notesCol, note.id), changes)), "save");
   backfillEmbeddings();
 }
@@ -783,7 +773,7 @@ async function writeEditor(ed) {
 function editorState() {
   return JSON.stringify([
     $("edit-type").value, $("edit-text").value, $("edit-due").value,
-    editing.image, editing.tags, $("edit-tag-input").value.trim(),
+    editing.images, editing.tags, $("edit-tag-input").value.trim(),
   ]);
 }
 
@@ -838,11 +828,16 @@ function syncEditorFields() {
     type: "button", class: "tag", textContent: `${t} ✕`, ariaLabel: `Remove tag ${t}`,
     onclick: () => { editing.tags = editing.tags.filter((x) => x !== t); syncEditorFields(); scheduleSave(); },
   })));
-  $("edit-image-wrap").hidden = type !== "fact" && !editing.image;
-  $("edit-image").hidden = !editing.image;
-  $("edit-image-remove").hidden = !editing.image;
-  $("edit-image-label").textContent = editing.image ? "📷 Replace photo" : "📷 Add photo";
-  if (editing.image) $("edit-image").src = editing.image;
+  $("edit-image-wrap").hidden = type !== "fact" && !editing.images.length;
+  $("edit-images").replaceChildren(...editing.images.map((src, i) => el("span", { class: "edit-thumb" },
+    el("img", { class: "thumb", src, alt: `Photo ${i + 1} of ${editing.images.length}`, onclick: () => openLightbox(editing.images, i) }),
+    el("button", {
+      type: "button", class: "edit-thumb-x", textContent: "✕", title: "Remove photo", ariaLabel: `Remove photo ${i + 1}`,
+      onclick: () => { editing.images.splice(i, 1); syncEditorFields(); scheduleSave(); },
+    }))));
+  $("edit-image-hint").textContent = editing.images.length >= MAX_IMAGES
+    ? `Photo limit reached (${MAX_IMAGES})`
+    : "Paste or drop photos here";
 }
 $("edit-type").addEventListener("change", syncEditorFields);
 
@@ -863,15 +858,87 @@ $("edit-tag-input").addEventListener("input", (e) => {
   if (!(e instanceof InputEvent) || e.inputType === "insertReplacementText") addEditorTag();
 });
 
-$("edit-image-file").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  editing.image = await compressImage(file);
-  e.target.value = "";
-  syncEditorFields();
-  scheduleSave();
+// Photos go in by paste or drag and drop (no button), onto the whole editor. Facts only.
+async function addEditorImages(files) {
+  const ed = editing;
+  for (const file of files) {
+    if (ed.images.length >= MAX_IMAGES) { $("edit-image-hint").textContent = `Photo limit reached (${MAX_IMAGES})`; break; }
+    try {
+      ed.images.push(await compressImage(file));
+    } catch {
+      $("edit-image-hint").textContent = "Couldn't read that image";
+    }
+    if (editing !== ed) return; // closed meanwhile
+    syncEditorFields();
+    scheduleSave();
+  }
+}
+const imageFiles = (dt) => [...(dt?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+dialog.addEventListener("paste", (e) => {
+  const files = imageFiles(e.clipboardData);
+  if (!files.length || !editing || $("edit-type").value !== "fact") return; // plain text paste goes on as normal
+  e.preventDefault();
+  addEditorImages(files);
 });
-$("edit-image-remove").addEventListener("click", () => { editing.image = null; syncEditorFields(); scheduleSave(); });
+dialog.addEventListener("dragover", (e) => {
+  if (!editing || $("edit-type").value !== "fact" || ![...(e.dataTransfer?.types ?? [])].includes("Files")) return;
+  e.preventDefault();
+  dialog.classList.add("dropping");
+});
+dialog.addEventListener("dragleave", (e) => { if (e.target === dialog || !dialog.contains(e.relatedTarget)) dialog.classList.remove("dropping"); });
+dialog.addEventListener("drop", (e) => {
+  dialog.classList.remove("dropping");
+  const files = imageFiles(e.dataTransfer);
+  if (!editing || $("edit-type").value !== "fact") return;
+  e.preventDefault(); // else the browser would navigate to the dropped file
+  if (files.length) addEditorImages(files);
+});
+
+// ---- photo viewer: tap a thumbnail to open it; swipe, arrow keys or the buttons move between photos ----
+const lightbox = $("lightbox");
+let lbImages = [];
+let lbIndex = 0;
+function openLightbox(images, index) {
+  lbImages = images;
+  showLightbox(index);
+  if (!lightbox.open) lightbox.showModal();
+}
+function showLightbox(i) {
+  lbIndex = (i + lbImages.length) % lbImages.length;
+  $("lightbox-img").src = lbImages[lbIndex];
+  $("lightbox-count").textContent = `${lbIndex + 1} / ${lbImages.length}`;
+  const many = lbImages.length > 1;
+  $("lightbox-count").hidden = $("lightbox-prev").hidden = $("lightbox-next").hidden = !many;
+}
+$("lightbox-prev").addEventListener("click", () => showLightbox(lbIndex - 1));
+$("lightbox-next").addEventListener("click", () => showLightbox(lbIndex + 1));
+$("lightbox-close").addEventListener("click", () => lightbox.close());
+lightbox.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") showLightbox(lbIndex - 1);
+  else if (e.key === "ArrowRight") showLightbox(lbIndex + 1);
+});
+{
+  // Swipe: the photo follows the finger; past 20% of the width (or 60 px) it moves on.
+  const stage = $("lightbox-stage");
+  let startX = null;
+  let dx = 0;
+  stage.addEventListener("pointerdown", (e) => { startX = e.clientX; dx = 0; stage.setPointerCapture(e.pointerId); });
+  stage.addEventListener("pointermove", (e) => {
+    if (startX === null) return;
+    dx = e.clientX - startX;
+    $("lightbox-img").style.transform = `translateX(${dx}px)`;
+  });
+  const end = () => {
+    if (startX === null) return;
+    startX = null;
+    $("lightbox-img").style.transform = "";
+    if (lbImages.length > 1 && Math.abs(dx) > Math.max(60, stage.clientWidth * 0.2)) showLightbox(lbIndex + (dx < 0 ? 1 : -1));
+    // A tap closes. Decided here, not on click: after a swipe the browser still sends a click.
+    else if (Math.abs(dx) < 6) setTimeout(() => lightbox.close()); // after this tap's click, so it can't land on what's underneath
+  };
+  stage.addEventListener("pointerup", end);
+  stage.addEventListener("pointercancel", () => { startX = null; $("lightbox-img").style.transform = ""; });
+}
 
 $("edit-delete").addEventListener("click", async () => {
   if (!confirm("Delete this note?")) return;

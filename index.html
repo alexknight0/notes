@@ -120,12 +120,7 @@
       <form class="dock" id="fact-form" autocomplete="off">
   <button type="button" class="primary fab" data-add hidden><span aria-hidden="true">+</span> Add</button>
         <input id="fact-search" type="search" placeholder="🔍 Search facts…" aria-label="Search facts" enterkeyhint="search">
-        <div class="row" id="fact-image-row" hidden>
-          <img id="fact-image-preview" class="thumb" alt="">
-          <button id="fact-image-clear" type="button" class="small">Remove photo</button>
-        </div>
         <div class="row">
-          <label class="file-btn icon-btn" title="Add photo" aria-label="Add photo">📷<input id="fact-image" type="file" accept="image/*" hidden></label>
           <textarea id="fact-text" rows="1" placeholder="New fact, e.g. My height: 178 cm" aria-label="Fact"></textarea>
           <button type="submit">Add<span class="wide-only"> fact</span></button>
         </div>
@@ -207,11 +202,8 @@
         <datalist id="tag-options"></datalist>
       </div>
       <div id="edit-image-wrap">
-        <img id="edit-image" alt="">
-        <div class="row">
-          <label class="file-btn"><span id="edit-image-label">📷 Replace photo</span><input id="edit-image-file" type="file" accept="image/*" hidden></label>
-          <button id="edit-image-remove" type="button" class="small">Remove photo</button>
-        </div>
+        <div id="edit-images" class="thumb-row"></div>
+        <div id="edit-image-hint" class="hint">Paste or drop photos here</div>
       </div>
       <div id="edit-status" class="edit-status" role="status" aria-live="polite"></div>
       <div class="row">
@@ -220,6 +212,15 @@
         <button id="edit-close" type="submit" class="primary">Close</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Photo viewer: opened by tapping a photo thumbnail in a list or in the editor. -->
+  <dialog id="lightbox" aria-label="Photo">
+    <div id="lightbox-stage"><img id="lightbox-img" alt="" draggable="false"></div>
+    <button id="lightbox-close" type="button" class="lb-btn" title="Close" aria-label="Close">✕</button>
+    <button id="lightbox-prev" type="button" class="lb-btn" title="Previous" aria-label="Previous photo">‹</button>
+    <button id="lightbox-next" type="button" class="lb-btn" title="Next" aria-label="Next photo">›</button>
+    <div id="lightbox-count" class="lb-count"></div>
   </dialog>
 
   <!-- Projects: a task. data-mode = "view" (tapped task, read in full; Edit button), "edit" (the
