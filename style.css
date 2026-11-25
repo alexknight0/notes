@@ -292,36 +292,25 @@ textarea { width: 100%; line-height: 1.5; resize: vertical; overflow-x: hidden; 
 .list li .actions button:hover { background: var(--surface-2); color: var(--text); }
 .list .empty { border: none; background: none; box-shadow: none; color: var(--muted); padding: 0.4rem 0.1rem; }
 
-/* Round tick boxes for tasks. */
-.list li input[type="checkbox"] {
-  appearance: none;
-  flex: none;
-  width: 1.35rem;
-  height: 1.35rem;
-  margin: 0.05rem 0 0;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
-  background: transparent;
-  cursor: pointer;
-  display: grid;
-  place-content: center;
-  transition: background-color 0.15s, border-color 0.15s;
+/* Tasks swipe sideways: right = done, left = delete. The strip behind the card says which; it
+   turns solid once letting go would do it. */
+#task-list, #task-done { position: relative; }
+#task-list > li, #task-done > li { touch-action: pan-y pinch-zoom; }
+#view-tasks.zoomed .list > li { touch-action: auto; } /* pinch-zoomed: sideways pans the page instead */
+.list li.swiping { user-select: none; z-index: 1; box-shadow: var(--shadow-lift); }
+.list li.swipe-settle { transition: transform 0.18s ease-out; z-index: 1; }
+.list li.swipe-under {
+  position: absolute; left: 0; right: 0; padding: 0 1.1rem; margin: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  border: none; box-shadow: none; font-weight: 700; font-size: 0.95rem;
+  background: color-mix(in srgb, var(--strip) 22%, var(--bg)); color: var(--strip);
+  transition: background-color 0.12s, color 0.12s;
 }
-.list li input[type="checkbox"]::after {
-  content: "";
-  width: 0.35rem;
-  height: 0.65rem;
-  margin-top: -0.15rem;
-  border: solid white;
-  border-width: 0 2.5px 2.5px 0;
-  transform: rotate(45deg) scale(0);
-  transition: transform 0.15s;
-}
-.list li input[type="checkbox"]:hover { border-color: var(--accent); }
-.list li input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
-.list li input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); }
-.list li input[type="checkbox"]:focus { box-shadow: none; }
+.swipe-under.right { --strip: #2da44e; }
+.swipe-under.left { --strip: var(--danger); }
+.swipe-under.right .swipe-delete, .swipe-under.left .swipe-done { visibility: hidden; }
+.list li.swipe-under.armed { background: var(--strip); color: white; }
+
 
 .thumb { width: 3.5rem; height: 3.5rem; object-fit: cover; border-radius: 10px; }
 
@@ -684,7 +673,7 @@ dialog.dropping { outline: 3px dashed var(--accent); outline-offset: -6px; }
 }
 .proj-toast[hidden] { display: none; }
 .proj-toast button { background: none; padding: 0.4rem 0.6rem; color: inherit; opacity: 0.65; font-weight: 500; font-size: 0.85rem; }
-.proj-toast #proj-toast-undo { opacity: 1; font-weight: 700; color: light-dark(#93aaff, #2f55c9); }
+.proj-toast #proj-toast-undo, .proj-toast #task-toast-undo { opacity: 1; font-weight: 700; color: light-dark(#93aaff, #2f55c9); }
 
 /* Dialogs */
 .pdialog h3 { margin: 0; font-size: 1.05rem; }

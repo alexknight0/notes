@@ -303,6 +303,97 @@ function noteItem(note, { leading, actions = [], meta, extraClass = "", onTag } 
   return el("li", { class: extraClass }, leading, body);
 }
 
+// ----- Tasks: swipe right = done (or back to not done, in the Done list), swipe left = delete -----
+// The card follows the finger over a coloured strip saying what letting go will do; past
+// TASK_SWIPE of the card's width it happens, with an Undo bar for a few seconds.
+const TASK_SWIPE = 0.3;
+const TASK_TOAST_MS = 5000;
+let taskUndo = null; // () => void, undoes the last swipe
+let taskToastTimer = 0;
+let swallowClick = false; // the click the browser sends after a swipe must not open the editor
+window.addEventListener("click", (e) => {
+  if (!swallowClick) return;
+  swallowClick = false;
+  e.stopPropagation();
+  e.preventDefault();
+}, true);
+
+function swipeTask(li, n) {
+  let start = null; // {x, y, id} while a finger/mouse is down
+  let dx = 0;
+  let under = null; // the strip behind the card while swiping
+  li.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || (e.pointerType !== "mouse" && zoomed()) || e.target.closest("button, a, input")) return;
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    dx = 0;
+  });
+  li.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const mx = e.clientX - start.x;
+    const my = e.clientY - start.y;
+    if (!under) {
+      if (Math.abs(my) > 10 && Math.abs(my) > Math.abs(mx)) { start = null; return; } // scrolling
+      if (Math.abs(mx) < 10) return;
+      li.setPointerCapture(e.pointerId);
+      window.getSelection()?.removeAllRanges();
+      under = el("li", { class: "swipe-under", ariaHidden: "true" },
+        el("span", { class: "swipe-done", textContent: n.done ? "↩ Not done" : "✓ Done" }),
+        el("span", { class: "swipe-delete", textContent: "🗑 Delete" }));
+      Object.assign(under.style, { top: `${li.offsetTop}px`, height: `${li.offsetHeight}px` });
+      li.before(under);
+      li.classList.add("swiping");
+    }
+    dx = mx;
+    li.style.transform = `translateX(${dx}px)`;
+    under.className = `swipe-under ${dx > 0 ? "right" : "left"}${Math.abs(dx) > li.offsetWidth * TASK_SWIPE ? " armed" : ""}`;
+  });
+  const end = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    start = null;
+    if (!under) return; // a tap: the click opens the editor as before
+    swallowClick = true;
+    setTimeout(() => { swallowClick = false; }, 400);
+    const strip = under;
+    under = null;
+    const go = e.type === "pointerup" && Math.abs(dx) > li.offsetWidth * TASK_SWIPE;
+    li.classList.remove("swiping");
+    li.classList.add("swipe-settle");
+    li.style.transform = go ? `translateX(${dx > 0 ? 110 : -110}%)` : "";
+    setTimeout(() => {
+      strip.remove();
+      if (go) (dx > 0 ? toggleTaskDone : deleteTask)(n);
+      else li.classList.remove("swipe-settle");
+    }, 180);
+  };
+  li.addEventListener("pointerup", end);
+  li.addEventListener("pointercancel", end);
+}
+
+function toggleTaskDone(n) {
+  const done = !n.done;
+  guard(updateDoc(doc(notesCol, n.id), { done, updatedAt: serverTimestamp() }), "update");
+  showTaskToast(done ? "Done" : "Moved back to tasks",
+    () => guard(updateDoc(doc(notesCol, n.id), { done: !done, updatedAt: serverTimestamp() }), "update"));
+}
+function deleteTask(n) {
+  const { id, ...data } = n;
+  guard(deleteDoc(doc(notesCol, id)), "delete");
+  showTaskToast("Deleted", () => guard(setDoc(doc(notesCol, id), data), "restore"));
+}
+function showTaskToast(text, undo) {
+  taskUndo = undo;
+  $("task-toast-text").textContent = text;
+  $("task-toast").hidden = false;
+  clearTimeout(taskToastTimer);
+  taskToastTimer = setTimeout(() => { $("task-toast").hidden = true; taskUndo = null; }, TASK_TOAST_MS);
+}
+$("task-toast-undo").addEventListener("click", () => {
+  clearTimeout(taskToastTimer);
+  $("task-toast").hidden = true;
+  taskUndo?.();
+  taskUndo = null;
+});
+
 function fillList(list, items, emptyText) {
   list.replaceChildren(...(items.length ? items : [el("li", { class: "empty", textContent: emptyText })]));
 }
@@ -316,15 +407,12 @@ function renderTasks() {
 
   const item = (n) => {
     const due = toDate(n.due);
-    const check = el("input", {
-      type: "checkbox", checked: Boolean(n.done), ariaLabel: "Done",
-      onchange: (e) => guard(updateDoc(doc(notesCol, n.id), { done: e.target.checked, updatedAt: serverTimestamp() }), "update"),
-    });
-    return noteItem(n, {
-      leading: check,
+    const li = noteItem(n, {
       meta: due ? `${formatDate(due)} · ${relative(due)}` : "No deadline",
       extraClass: n.done ? "done" : due && due < now ? "overdue" : "",
     });
+    swipeTask(li, n);
+    return li;
   };
   fillList($("task-list"), open.map(item), "No tasks 🎉");
   $("task-done").replaceChildren(...done.map(item));
@@ -1374,7 +1462,10 @@ document.addEventListener("keydown", (e) => {
 
 
 // Pinch-zoomed: no swipe gestures, so a sideways swipe pans the zoomed page (see the scratch pad).
-const updateProjZoom = () => $("view-projects").classList.toggle("zoomed", zoomed());
+const updateProjZoom = () => {
+  $("view-projects").classList.toggle("zoomed", zoomed());
+  $("view-tasks").classList.toggle("zoomed", zoomed()); // tasks swipe too
+};
 window.visualViewport?.addEventListener("resize", updateProjZoom);
 
 let tapTask = null; // tapped task, opened by the click event that follows the tap

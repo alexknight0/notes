@@ -50,7 +50,7 @@
       <button id="scratch-clear" type="button" class="small" hidden>Clear</button>
     </section>
 
-    <!-- 1. Tasks / deadlines -->
+    <!-- 1. Tasks / deadlines. Swipe a task right = done, left = delete (Undo bar after). -->
     <section id="view-tasks" class="view" data-title="Tasks" hidden>
       <div class="scroll">
         <!-- Push reminders when a task comes due (sent every minute by the Cloudflare Worker in worker/). -->
@@ -66,6 +66,10 @@
         </details>
       </div>
       <button type="button" class="primary fab" data-add hidden><span aria-hidden="true">+</span> Add</button>
+      <div id="task-toast" class="proj-toast" role="status" hidden>
+        <span id="task-toast-text">Done</span><span class="spacer"></span>
+        <button id="task-toast-undo" type="button">Undo</button>
+      </div>
       <form class="dock" id="task-form" autocomplete="off">
         <div class="row due-chips dock-options" role="group" aria-label="Due">
           <button type="button" class="chip" data-due="today">Today</button>
